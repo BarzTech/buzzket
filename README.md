@@ -1,2 +1,0 @@
-# buzzket
-ticket vending system
