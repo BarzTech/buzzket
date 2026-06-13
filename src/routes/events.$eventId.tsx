@@ -1,16 +1,20 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { getEvent, formatDate, formatUGX } from "@/lib/mock-events";
+import { useQuery } from "@tanstack/react-query";
+import { type Event, type TicketTier, formatDate, formatUGX } from "@/lib/format";
+import { eventQueryOptions } from "@/lib/data/events";
 import { Navbar } from "@/components/navbar";
 import { Footer } from "@/components/footer";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
-import { Calendar, MapPin, Clock, User, Ticket, Share2, MapPin as MapIcon } from "lucide-react";
-import { useState, useMemo } from "react";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Calendar, MapPin, Clock, Ticket, Share2, MapPin as MapIcon, AlertCircle } from "lucide-react";
+import { useState, useEffect } from "react";
 
 export const Route = createFileRoute("/events/$eventId")({
-  head: ({ params }) => {
-    const event = getEvent(params.eventId);
+  head: ({ loaderData }) => {
+    const event = (loaderData as Event | null | undefined) ?? undefined;
     return {
       meta: [
         { title: event ? `${event.title} — Buzzket` : "Event — Buzzket" },
@@ -21,20 +25,52 @@ export const Route = createFileRoute("/events/$eventId")({
       ],
     };
   },
+  loader: ({ context, params }) =>
+    context.queryClient.ensureQueryData(eventQueryOptions(params.eventId)),
   component: EventDetail,
 });
 
-const TIERS = [
-  { label: "Regular", price: (from: number) => from },
-  { label: "VIP", price: (from: number) => from * 2.5 },
-  { label: "Early Bird", price: (from: number) => from * 0.7 },
-];
-
 function EventDetail() {
   const { eventId } = Route.useParams();
-  const event = useMemo(() => getEvent(eventId), [eventId]);
+  const { data: event, isLoading, isError, error } = useQuery(eventQueryOptions(eventId));
   const [qty, setQty] = useState(1);
-  const [tier, setTier] = useState(TIERS[0]);
+  const [tier, setTier] = useState<TicketTier | null>(null);
+
+  const tiers = event?.tiers ?? [];
+  useEffect(() => {
+    if (tiers.length > 0 && !tier) setTier(tiers[0]);
+  }, [tiers, tier]);
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen">
+        <Navbar />
+        <div className="mx-auto max-w-7xl px-4 py-10 space-y-6">
+          <Skeleton className="h-56 w-full rounded-xl md:h-80" />
+          <Skeleton className="h-8 w-2/3" />
+          <Skeleton className="h-4 w-1/2" />
+          <Skeleton className="h-40 w-full" />
+        </div>
+      </div>
+    );
+  }
+
+  if (isError) {
+    return (
+      <div className="min-h-screen">
+        <Navbar />
+        <div className="mx-auto max-w-3xl px-4 py-16">
+          <Alert variant="destructive">
+            <AlertCircle className="h-4 w-4" />
+            <AlertTitle>Couldn't load this event</AlertTitle>
+            <AlertDescription>
+              {error instanceof Error ? error.message : "Please try again shortly."}
+            </AlertDescription>
+          </Alert>
+        </div>
+      </div>
+    );
+  }
 
   if (!event) {
     return (
@@ -45,8 +81,10 @@ function EventDetail() {
     );
   }
 
-  const unitPrice = tier.price(event.priceFrom);
+  const unitPrice = tier?.price ?? event.priceFrom;
   const total = unitPrice * qty;
+  const maxQty = Math.min(10, tier?.available ?? 10);
+  const soldOut = (tier?.available ?? 0) <= 0;
 
   return (
     <div className="min-h-screen">
@@ -112,20 +150,27 @@ function EventDetail() {
                 <div>
                   <label className="mb-1.5 block text-xs font-medium text-muted-foreground">Ticket type</label>
                   <div className="grid grid-cols-3 gap-2">
-                    {TIERS.map((t) => (
-                      <button
-                        key={t.label}
-                        onClick={() => setTier(t)}
-                        className={`rounded-lg border px-2 py-3 text-center text-sm font-semibold transition-all ${
-                          tier.label === t.label
-                            ? "border-primary bg-primary/10 text-primary"
-                            : "border-border bg-card text-foreground hover:bg-accent"
-                        }`}
-                      >
-                        <div className="text-[10px] font-normal opacity-70">{t.label}</div>
-                        {formatUGX(t.price(event.priceFrom))}
-                      </button>
-                    ))}
+                    {tiers.map((t) => {
+                      const tierSoldOut = t.available <= 0;
+                      return (
+                        <button
+                          key={t.id}
+                          disabled={tierSoldOut}
+                          onClick={() => { setTier(t); setQty(1); }}
+                          className={`rounded-lg border px-2 py-3 text-center text-sm font-semibold transition-all disabled:cursor-not-allowed disabled:opacity-50 ${
+                            tier?.id === t.id
+                              ? "border-primary bg-primary/10 text-primary"
+                              : "border-border bg-card text-foreground hover:bg-accent"
+                          }`}
+                        >
+                          <div className="text-[10px] font-normal opacity-70">{t.name}</div>
+                          {formatUGX(t.price)}
+                          <div className="text-[10px] font-normal opacity-70">
+                            {tierSoldOut ? "Sold out" : `${t.available} left`}
+                          </div>
+                        </button>
+                      );
+                    })}
                   </div>
                 </div>
 
@@ -138,8 +183,9 @@ function EventDetail() {
                     >-</button>
                     <span className="w-8 text-center font-semibold">{qty}</span>
                     <button
-                      className="inline-flex h-9 w-9 items-center justify-center rounded-md border font-bold"
-                      onClick={() => setQty((q) => Math.min(10, q + 1))}
+                      className="inline-flex h-9 w-9 items-center justify-center rounded-md border font-bold disabled:opacity-40"
+                      disabled={qty >= maxQty}
+                      onClick={() => setQty((q) => Math.min(maxQty, q + 1))}
                     >+</button>
                   </div>
                 </div>
@@ -152,12 +198,21 @@ function EventDetail() {
                 </div>
 
                 <Button
-                  asChild
+                  asChild={!soldOut && !!tier}
+                  disabled={soldOut || !tier}
                   className="w-full bg-cta text-cta-foreground hover:bg-cta/90 font-semibold"
                 >
-                  <Link to="/checkout/$eventId" params={{ eventId: event.id }} search={{ tier: tier.label, qty: String(qty) }}>
-                    <Ticket className="mr-2 h-4 w-4" /> Buy Tickets
-                  </Link>
+                  {soldOut || !tier ? (
+                    <span><Ticket className="mr-2 h-4 w-4 inline" /> Sold Out</span>
+                  ) : (
+                    <Link
+                      to="/checkout/$eventId"
+                      params={{ eventId: event.id }}
+                      search={{ tierId: tier.id, qty: String(qty) }}
+                    >
+                      <Ticket className="mr-2 h-4 w-4" /> Buy Tickets
+                    </Link>
+                  )}
                 </Button>
 
                 <div className="flex gap-2">

@@ -1,5 +1,8 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
-import { EVENTS } from "@/lib/mock-events";
+import { createFileRoute, Link, redirect } from "@tanstack/react-router";
+import { useQuery } from "@tanstack/react-query";
+import { eventsQueryOptions } from "@/lib/data/events";
+import { dashboardStatsQueryOptions } from "@/lib/data/dashboard";
+import { requireAuthOrRedirect } from "@/lib/auth/guard";
 import { Navbar } from "@/components/navbar";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -14,25 +17,19 @@ export const Route = createFileRoute("/dashboard")({
       { name: "description", content: "Manage your events, track ticket sales and view analytics." },
     ],
   }),
+  beforeLoad: ({ location }) => requireAuthOrRedirect(location.href),
+  loader: ({ context }) =>
+    Promise.all([
+      context.queryClient.ensureQueryData(eventsQueryOptions()),
+      context.queryClient.ensureQueryData(dashboardStatsQueryOptions()),
+    ]),
   component: Dashboard,
 });
 
 function Dashboard() {
   const [tab, setTab] = useState<"overview" | "events">("overview");
-
-  const ticketsSold = 312;
-  const totalSales = 9_420_000;
-  // Platform commission: 5% + UGX 500 per ticket
-  const platformCommission = Math.round(totalSales * 0.05) + ticketsSold * 500;
-  const organizerPayout = totalSales - platformCommission;
-  const stats = {
-    totalSales,
-    ticketsSold,
-    totalEvents: EVENTS.length,
-    attendees: 287,
-    platformCommission,
-    organizerPayout,
-  };
+  const { data: events = [] } = useQuery(eventsQueryOptions());
+  const { data: stats } = useQuery(dashboardStatsQueryOptions());
 
   return (
     <div className="min-h-screen">
@@ -74,10 +71,10 @@ function Dashboard() {
               <h1 className="text-2xl font-bold">Dashboard Overview</h1>
               <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
                 {[
-                  { label: "Total Sales (UGX)", value: new Intl.NumberFormat("en-UG").format(stats.totalSales), sub: "+12% vs last month", accent: true },
-                  { label: "Tickets Sold", value: String(stats.ticketsSold), sub: "+8% vs last month", accent: false },
-                  { label: "Active Events", value: String(stats.totalEvents), sub: "3 upcoming", accent: false },
-                  { label: "Attendees", value: String(stats.attendees), sub: "Confirmed check-ins", accent: false },
+                  { label: "Total Sales (UGX)", value: new Intl.NumberFormat("en-UG").format(stats?.totalSales ?? 0), sub: "+12% vs last month", accent: true },
+                  { label: "Tickets Sold", value: String(stats?.ticketsSold ?? 0), sub: "+8% vs last month", accent: false },
+                  { label: "Active Events", value: String(stats?.totalEvents ?? 0), sub: "3 upcoming", accent: false },
+                  { label: "Attendees", value: String(stats?.attendees ?? 0), sub: "Confirmed check-ins", accent: false },
                 ].map((s) => (
                   <Card key={s.label} className={`p-5 ${s.accent ? "bg-primary text-primary-foreground" : ""}`}>
                     <div className="text-sm opacity-80">{s.label}</div>
@@ -96,11 +93,11 @@ function Dashboard() {
                   <div className="grid grid-cols-2 gap-6 text-sm">
                     <div>
                       <div className="text-xs text-muted-foreground">Platform fee</div>
-                      <div className="font-bold">UGX {new Intl.NumberFormat("en-UG").format(stats.platformCommission)}</div>
+                      <div className="font-bold">UGX {new Intl.NumberFormat("en-UG").format(stats?.platformCommission ?? 0)}</div>
                     </div>
                     <div>
                       <div className="text-xs text-muted-foreground">Your net payout</div>
-                      <div className="font-bold text-primary">UGX {new Intl.NumberFormat("en-UG").format(stats.organizerPayout)}</div>
+                      <div className="font-bold text-primary">UGX {new Intl.NumberFormat("en-UG").format(stats?.organizerPayout ?? 0)}</div>
                     </div>
                   </div>
                 </div>
@@ -108,7 +105,7 @@ function Dashboard() {
 
               <h2 className="text-lg font-semibold mt-6">Recent Activity</h2>
               <Card className="divide-y">
-                {EVENTS.slice(0, 3).map((e) => (
+                {events.slice(0, 3).map((e) => (
                   <div key={e.id} className="flex items-center gap-4 p-4">
                     <img src={e.image} alt="" className="h-12 w-12 rounded-lg object-cover" />
                     <div className="flex-1 min-w-0">
@@ -131,7 +128,7 @@ function Dashboard() {
                 <Button className="bg-cta text-cta-foreground hover:bg-cta/90 font-semibold">+ Create Event</Button>
               </div>
               <Card className="divide-y">
-                {EVENTS.map((e) => (
+                {events.map((e) => (
                   <div key={e.id} className="flex items-center gap-4 p-4">
                     <img src={e.image} alt="" className="h-14 w-14 rounded-lg object-cover" />
                     <div className="flex-1 min-w-0">

@@ -1,43 +1,131 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { getEvent, formatUGX } from "@/lib/mock-events";
+import { useQuery } from "@tanstack/react-query";
+import { formatUGX } from "@/lib/format";
+import { eventQueryOptions } from "@/lib/data/events";
+import { reserveTickets, confirmOrder } from "@/lib/data/tickets";
+import { calcOrder, COMMISSION_FLAT_UGX, COMMISSION_PERCENT } from "@/lib/fees";
 import { Navbar } from "@/components/navbar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Ticket } from "@/components/ticket";
-import { useMemo, useState } from "react";
-import { CreditCard, Smartphone, CheckCircle, Wallet, ShieldCheck } from "lucide-react";
-import { calcOrder, feePerTicket, COMMISSION_PERCENT, COMMISSION_FLAT_UGX } from "@/lib/fees";
+import { useEffect, useState } from "react";
+import { CreditCard, Smartphone, CheckCircle, Wallet, ShieldCheck, Clock, AlertCircle, Loader2 } from "lucide-react";
 
 export const Route = createFileRoute("/checkout/$eventId")({
   validateSearch: (search: Record<string, unknown>) => ({
-    tier: String(search.tier || "Regular"),
+    tierId: String(search.tierId || ""),
     qty: String(search.qty || "1"),
   }),
+  loader: ({ context, params }) =>
+    context.queryClient.ensureQueryData(eventQueryOptions(params.eventId)),
   component: Checkout,
 });
 
 function Checkout() {
   const { eventId } = Route.useParams();
   const search = Route.useSearch();
-  const event = useMemo(() => getEvent(eventId), [eventId]);
-  const qty = Number(search.qty || "1");
-  const tier = search.tier || "Regular";
+  const { data: event, isLoading } = useQuery(eventQueryOptions(eventId));
+  const qty = Math.max(1, Number(search.qty || "1"));
+
+  const tier = event?.tiers?.find((t) => t.id === search.tierId) ?? event?.tiers?.[0] ?? null;
+  const unitPrice = tier?.price ?? event?.priceFrom ?? 0;
+  const { subtotal, fees, total } = calcOrder(unitPrice, qty);
 
   const [step, setStep] = useState(1);
   const [contact, setContact] = useState({ name: "", email: "", phone: "" });
   const [payment, setPayment] = useState<"mtn" | "airtel" | "card">("mtn");
-  const [done, setDone] = useState(false);
 
-  const unitPrice =
-    tier === "VIP" ? (event?.priceFrom ?? 0) * 2.5 : tier === "Early Bird" ? (event?.priceFrom ?? 0) * 0.7 : (event?.priceFrom ?? 0);
-  const { subtotal, fees, total } = calcOrder(unitPrice, qty);
+  // Reservation state (10-minute hold created server-side via row-locking RPC).
+  const [reservationId, setReservationId] = useState<string | null>(null);
+  const [expiresAt, setExpiresAt] = useState<number | null>(null);
+  const [remaining, setRemaining] = useState<number>(0);
+  const [reserveError, setReserveError] = useState<string | null>(null);
 
-  if (!event) return <div className="p-10 text-center text-muted-foreground">Event not found.</div>;
+  const [paying, setPaying] = useState(false);
+  const [payError, setPayError] = useState<string | null>(null);
+  const [qrTokens, setQrTokens] = useState<string[] | null>(null);
 
-  if (done) {
+  // Reserve inventory as soon as we have a valid tier. Depend on the stable
+  // tier id (not the object) so react-query refetches don't spawn duplicate
+  // server-side holds.
+  const tierId = tier?.id;
+  useEffect(() => {
+    if (!tierId) return;
+    let active = true;
+    setReserveError(null);
+    reserveTickets({ data: { tierId, qty } })
+      .then((res) => {
+        if (!active) return;
+        setReservationId(res.reservationId);
+        setExpiresAt(new Date(res.expiresAt).getTime());
+      })
+      .catch((e: unknown) => {
+        if (active) setReserveError(e instanceof Error ? e.message : "Couldn't reserve tickets");
+      });
+    return () => {
+      active = false;
+    };
+  }, [tierId, qty]);
+
+  // Countdown.
+  useEffect(() => {
+    if (!expiresAt) return;
+    const tick = () => setRemaining(Math.max(0, Math.floor((expiresAt - Date.now()) / 1000)));
+    tick();
+    const id = setInterval(tick, 1000);
+    return () => clearInterval(id);
+  }, [expiresAt]);
+
+  // Derive from the timestamp (not `remaining`, which starts at 0) so we don't
+  // flash "expired" for one frame before the countdown effect initialises.
+  const expired = expiresAt !== null && expiresAt <= Date.now();
+  const mins = Math.floor(remaining / 60);
+  const secs = String(remaining % 60).padStart(2, "0");
+
+  const pay = async () => {
+    if (!reservationId) return;
+    setPaying(true);
+    setPayError(null);
+    try {
+      const res = await confirmOrder({
+        data: {
+          reservationId,
+          qty,
+          unitPrice,
+          contactName: contact.name || "Guest",
+          contactEmail: contact.email,
+          contactPhone: contact.phone,
+          paymentMethod: payment,
+        },
+      });
+      setQrTokens(res.qrTokens);
+    } catch (e) {
+      setPayError(e instanceof Error ? e.message : "Payment failed");
+    } finally {
+      setPaying(false);
+    }
+  };
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen">
+        <Navbar />
+        <div className="mx-auto max-w-5xl px-4 py-10 space-y-4">
+          <Skeleton className="h-8 w-64" />
+          <Skeleton className="h-64 w-full" />
+        </div>
+      </div>
+    );
+  }
+
+  if (!event || !tier) return <div className="p-10 text-center text-muted-foreground">Event not found.</div>;
+
+  if (qrTokens) {
     return (
       <div className="min-h-screen">
         <Navbar />
@@ -47,10 +135,21 @@ function Checkout() {
           </div>
           <h2 className="mt-4 text-2xl font-bold">Booking Confirmed!</h2>
           <p className="mt-2 text-muted-foreground">
-            Your tickets for <strong>{event.title}</strong> have been reserved.
+            Your {qrTokens.length} ticket{qrTokens.length > 1 ? "s" : ""} for <strong>{event.title}</strong> {qrTokens.length > 1 ? "have" : "has"} been issued.
           </p>
-          <div className="mt-8 text-left">
-            <Ticket eventTitle={event.title} date={event.date} venue={event.venue} tier={tier} holder={contact.name || "Guest"} price={unitPrice} />
+          <div className="mt-8 space-y-6 text-left">
+            {qrTokens.map((token, i) => (
+              <Ticket
+                key={token}
+                eventTitle={event.title}
+                date={event.date}
+                venue={event.venue}
+                tier={tier.name}
+                holder={contact.name || `Guest ${i + 1}`}
+                price={unitPrice}
+                qrToken={token}
+              />
+            ))}
           </div>
           <Button asChild className="mt-8 bg-primary text-primary-foreground">
             <Link to="/">Back to Home</Link>
@@ -66,6 +165,40 @@ function Checkout() {
     <div className="min-h-screen">
       <Navbar />
       <div className="mx-auto max-w-5xl px-4 py-8">
+        {/* Reservation status banner */}
+        {reserveError ? (
+          <Alert variant="destructive" className="mb-6">
+            <AlertCircle className="h-4 w-4" />
+            <AlertTitle>Couldn't hold these tickets</AlertTitle>
+            <AlertDescription>
+              {reserveError}{" "}
+              <Link to="/events/$eventId" params={{ eventId }} className="font-medium underline">
+                Back to event
+              </Link>
+            </AlertDescription>
+          </Alert>
+        ) : expired ? (
+          <Alert variant="destructive" className="mb-6">
+            <Clock className="h-4 w-4" />
+            <AlertTitle>Reservation expired</AlertTitle>
+            <AlertDescription>
+              Your 10-minute hold lapsed.{" "}
+              <Link to="/events/$eventId" params={{ eventId }} className="font-medium underline">
+                Start over
+              </Link>
+            </AlertDescription>
+          </Alert>
+        ) : reservationId ? (
+          <div className="mb-6 flex items-center gap-2 rounded-lg border border-primary/30 bg-primary/5 p-3 text-sm">
+            <Clock className="h-4 w-4 text-primary" />
+            <span>Tickets reserved — complete payment within <strong>{mins}:{secs}</strong></span>
+          </div>
+        ) : (
+          <div className="mb-6 flex items-center gap-2 rounded-lg border p-3 text-sm text-muted-foreground">
+            <Loader2 className="h-4 w-4 animate-spin" /> Reserving your tickets…
+          </div>
+        )}
+
         {/* Stepper */}
         <div className="mb-8 flex items-center justify-between">
           {steps.map((s, i) => (
@@ -91,12 +224,12 @@ function Checkout() {
                   <img src={event.image} alt={event.title} className="h-16 w-16 rounded-md object-cover" />
                   <div className="flex-1">
                     <div className="font-semibold">{event.title}</div>
-                    <div className="text-sm text-muted-foreground">{tier} x {qty}</div>
+                    <div className="text-sm text-muted-foreground">{tier.name} x {qty}</div>
                   </div>
                   <div className="font-bold">{formatUGX(total)}</div>
                 </div>
                 <div className="text-xs text-muted-foreground">Tickets are subject to availability and cannot be refunded.</div>
-                <Button onClick={() => setStep(2)} className="w-full bg-cta text-cta-foreground hover:bg-cta/90 font-semibold">
+                <Button onClick={() => setStep(2)} disabled={expired || !!reserveError} className="w-full bg-cta text-cta-foreground hover:bg-cta/90 font-semibold">
                   Continue
                 </Button>
               </div>
@@ -155,9 +288,20 @@ function Checkout() {
                     </button>
                   ))}
                 </div>
+                {payError && (
+                  <div className="flex items-center gap-2 rounded-lg bg-destructive/10 p-3 text-sm text-destructive">
+                    <AlertCircle className="h-4 w-4" /> {payError}
+                  </div>
+                )}
                 <div className="flex gap-3 pt-2">
                   <Button variant="outline" onClick={() => setStep(2)} className="flex-1">Back</Button>
-                  <Button onClick={() => setDone(true)} className="flex-1 bg-cta text-cta-foreground hover:bg-cta/90 font-semibold">Pay {formatUGX(total)}</Button>
+                  <Button
+                    onClick={pay}
+                    disabled={paying || expired || !reservationId || !!reserveError}
+                    className="flex-1 bg-cta text-cta-foreground hover:bg-cta/90 font-semibold"
+                  >
+                    {paying ? <Loader2 className="h-4 w-4 animate-spin" /> : `Pay ${formatUGX(total)}`}
+                  </Button>
                 </div>
               </div>
             )}
@@ -170,7 +314,7 @@ function Checkout() {
               <img src={event.image} alt="" className="h-12 w-12 rounded-md object-cover" />
               <div>
                 <div className="text-sm font-medium">{event.title}</div>
-                <div className="text-xs text-muted-foreground">{tier} x {qty}</div>
+                <div className="text-xs text-muted-foreground">{tier.name} x {qty}</div>
               </div>
             </div>
             <Separator className="my-4" />
@@ -178,7 +322,7 @@ function Checkout() {
               <div className="flex justify-between"><span className="text-muted-foreground">Tickets</span><span>{formatUGX(unitPrice)} x {qty}</span></div>
               <div className="flex justify-between"><span className="text-muted-foreground">Subtotal</span><span>{formatUGX(subtotal)}</span></div>
               <div className="flex justify-between">
-                <span className="text-muted-foreground">Service fee <span className="opacity-70">({Math.round(COMMISSION_PERCENT * 100)}% + {formatUGX(COMMISSION_FLAT_UGX)}/ticket)</span></span>
+                <span className="text-muted-foreground">Service &amp; Processing Fee <span className="opacity-70">({Math.round(COMMISSION_PERCENT * 100)}% + {formatUGX(COMMISSION_FLAT_UGX)}/ticket)</span></span>
                 <span>{formatUGX(fees)}</span>
               </div>
               <Separator />
