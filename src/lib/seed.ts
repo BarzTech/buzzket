@@ -1,22 +1,41 @@
-export type Event = {
-  id: string;
-  title: string;
-  category: string;
-  date: string; // ISO
-  venue: string;
-  city: string;
-  image: string;
-  priceFrom: number; // UGX
-  organizer: { name: string; avatar: string };
-  description: string;
-  featured?: boolean;
-};
+import type { Event, TicketTier } from "./format";
+
+// Seed dataset. This is the SAME data that `supabase/seed.sql` loads into the
+// database. It is ALSO used as a read-only fallback by the server data layer
+// when SUPABASE_URL is not configured yet, so the app stays demoable before a
+// Supabase project is connected. Client components never import this directly —
+// they fetch through the server functions in `src/lib/data/events.ts`.
 
 const img = (seed: string) =>
   `https://images.unsplash.com/${seed}?auto=format&fit=crop&w=1200&q=70`;
 
-export const EVENTS: Event[] = [
-  {
+type SeedEvent = Omit<Event, "tiers"> & {
+  // tier name -> { unit price (UGX), quantity available }
+  tierConfig: Record<string, { price: number; quantity: number }>;
+};
+
+const tiersFor = (e: SeedEvent): TicketTier[] =>
+  Object.entries(e.tierConfig ?? {}).map(([name, cfg], i) => ({
+    id: `${e.id}-tier-${i}`,
+    eventId: e.id,
+    name,
+    price: cfg.price,
+    quantityTotal: cfg.quantity,
+    quantitySold: 0,
+    available: cfg.quantity,
+  }));
+
+const mk = (e: Omit<Event, "tiers" | "priceFrom"> & { priceFrom: number }): SeedEvent => ({
+  ...e,
+  tierConfig: {
+    "Early Bird": { price: Math.round(e.priceFrom * 0.7), quantity: 100 },
+    Regular: { price: e.priceFrom, quantity: 400 },
+    VIP: { price: Math.round(e.priceFrom * 2.5), quantity: 50 },
+  },
+});
+
+const SEED_EVENTS: SeedEvent[] = [
+  mk({
     id: "blankets-wine-kampala",
     title: "Blankets & Wine Kampala",
     category: "Music",
@@ -29,8 +48,8 @@ export const EVENTS: Event[] = [
     description:
       "An afternoon of soulful live music, curated food and the best of East African creativity. Bring a blanket, bring a friend.",
     featured: true,
-  },
-  {
+  }),
+  mk({
     id: "nyege-nyege-2026",
     title: "Nyege Nyege Festival 2026",
     category: "Festival",
@@ -43,8 +62,8 @@ export const EVENTS: Event[] = [
     description:
       "Four days, four stages, hundreds of artists from across the continent on the banks of the Nile.",
     featured: true,
-  },
-  {
+  }),
+  mk({
     id: "kla-tech-summit",
     title: "Kampala Tech Summit",
     category: "Conference",
@@ -57,8 +76,8 @@ export const EVENTS: Event[] = [
     description:
       "The largest gathering of founders, engineers and investors in East Africa. Two days of talks, demos and deals.",
     featured: true,
-  },
-  {
+  }),
+  mk({
     id: "comedy-store-uganda",
     title: "Comedy Store Uganda — Anniversary",
     category: "Comedy",
@@ -68,10 +87,9 @@ export const EVENTS: Event[] = [
     image: img("photo-1527224857830-43a7acc85260"),
     priceFrom: 40000,
     organizer: { name: "Alex Muhangi", avatar: img("photo-1568602471122-7832951cc4c5") },
-    description:
-      "Uganda's biggest comedians under one roof for one unforgettable night.",
-  },
-  {
+    description: "Uganda's biggest comedians under one roof for one unforgettable night.",
+  }),
+  mk({
     id: "afro-food-festival",
     title: "Afro Food & Wine Festival",
     category: "Food",
@@ -83,8 +101,8 @@ export const EVENTS: Event[] = [
     organizer: { name: "Taste Uganda", avatar: img("photo-1438761681033-6461ffad8d80") },
     description:
       "Sample dishes from 40+ chefs, pair with local wines, watch live cooking demos.",
-  },
-  {
+  }),
+  mk({
     id: "marathon-2026",
     title: "MTN Kampala Marathon",
     category: "Sports",
@@ -95,8 +113,8 @@ export const EVENTS: Event[] = [
     priceFrom: 30000,
     organizer: { name: "MTN Uganda", avatar: img("photo-1472099645785-5658abf4ff4e") },
     description: "Run for a cause across 5km, 10km, 21km and 42km categories.",
-  },
-  {
+  }),
+  mk({
     id: "fashion-week-ug",
     title: "Kampala Fashion Week",
     category: "Fashion",
@@ -107,8 +125,8 @@ export const EVENTS: Event[] = [
     priceFrom: 90000,
     organizer: { name: "KFW Council", avatar: img("photo-1544005313-94ddf0286df2") },
     description: "East Africa's leading designers showcase their newest collections.",
-  },
-  {
+  }),
+  mk({
     id: "gospel-night",
     title: "Worship Night Uganda",
     category: "Music",
@@ -119,35 +137,13 @@ export const EVENTS: Event[] = [
     priceFrom: 20000,
     organizer: { name: "Watoto Church", avatar: img("photo-1531123897727-8f129e1688ce") },
     description: "An evening of praise with leading gospel artists from across Africa.",
-  },
+  }),
 ];
 
-export const CATEGORIES = [
-  "All",
-  "Music",
-  "Festival",
-  "Conference",
-  "Comedy",
-  "Food",
-  "Sports",
-  "Fashion",
-];
+export const SEED_EVENTS_WITH_TIERS: Event[] = SEED_EVENTS.map((e) => {
+  const { tierConfig: _tierConfig, ...rest } = e;
+  return { ...rest, tiers: tiersFor(e) };
+});
 
-export const getEvent = (id: string) => EVENTS.find((e) => e.id === id);
-
-export const formatUGX = (n: number) =>
-  new Intl.NumberFormat("en-UG", {
-    style: "currency",
-    currency: "UGX",
-    maximumFractionDigits: 0,
-  }).format(n);
-
-export const formatDate = (iso: string) =>
-  new Date(iso).toLocaleString("en-UG", {
-    weekday: "short",
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
+export const findSeedEvent = (id: string) =>
+  SEED_EVENTS_WITH_TIERS.find((e) => e.id === id);

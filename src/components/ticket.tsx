@@ -1,5 +1,7 @@
-import { QrCode } from "lucide-react";
-import { formatDate, formatUGX } from "@/lib/mock-events";
+import { useEffect, useState } from "react";
+import { Download, QrCode, Loader2 } from "lucide-react";
+import { formatDate, formatUGX } from "@/lib/format";
+import { tokenToDataUrl, downloadQrPng } from "@/lib/qr";
 
 type TicketProps = {
   eventTitle: string;
@@ -8,10 +10,32 @@ type TicketProps = {
   tier: string;
   holder: string;
   price: number;
-  code?: string;
+  /** Cryptographic QR token issued when the order is paid. */
+  qrToken?: string;
 };
 
-export function Ticket({ eventTitle, date, venue, tier, holder, price, code = "BZK-A1B2-C3D4" }: TicketProps) {
+export function Ticket({ eventTitle, date, venue, tier, holder, price, qrToken }: TicketProps) {
+  const [qrUrl, setQrUrl] = useState<string | null>(null);
+  const shortCode = qrToken ? `BZK-${qrToken.slice(0, 4)}-${qrToken.slice(4, 8)}`.toUpperCase() : "BZK-PENDING";
+
+  useEffect(() => {
+    let active = true;
+    if (!qrToken) {
+      setQrUrl(null);
+      return;
+    }
+    tokenToDataUrl(qrToken)
+      .then((url) => {
+        if (active) setQrUrl(url);
+      })
+      .catch(() => {
+        if (active) setQrUrl(null);
+      });
+    return () => {
+      active = false;
+    };
+  }, [qrToken]);
+
   return (
     <div className="relative mx-auto flex w-full max-w-xl overflow-hidden rounded-xl bg-card shadow-lg ring-1 ring-border">
       {/* Left side */}
@@ -39,6 +63,15 @@ export function Ticket({ eventTitle, date, venue, tier, holder, price, code = "B
             <div className="font-semibold">{formatUGX(price)}</div>
           </div>
         </div>
+        {qrUrl && (
+          <button
+            type="button"
+            onClick={() => downloadQrPng(qrUrl, `buzzket-ticket-${shortCode}`)}
+            className="mt-4 inline-flex items-center gap-1.5 text-xs font-medium text-primary hover:underline"
+          >
+            <Download className="h-3.5 w-3.5" /> Download QR
+          </button>
+        )}
       </div>
 
       {/* Perforation */}
@@ -50,10 +83,16 @@ export function Ticket({ eventTitle, date, venue, tier, holder, price, code = "B
 
       {/* Right stub */}
       <div className="flex w-36 flex-col items-center justify-center gap-2 bg-primary p-5 text-primary-foreground">
-        <div className="grid h-20 w-20 place-items-center rounded-md bg-primary-foreground text-primary">
-          <QrCode className="h-16 w-16" />
+        <div className="grid h-20 w-20 place-items-center overflow-hidden rounded-md bg-primary-foreground text-primary">
+          {qrUrl ? (
+            <img src={qrUrl} alt={`QR code ${shortCode}`} className="h-full w-full object-contain p-1" />
+          ) : qrToken ? (
+            <Loader2 className="h-8 w-8 animate-spin" />
+          ) : (
+            <QrCode className="h-16 w-16" />
+          )}
         </div>
-        <div className="text-[10px] font-mono opacity-90">{code}</div>
+        <div className="text-[10px] font-mono opacity-90">{shortCode}</div>
       </div>
     </div>
   );

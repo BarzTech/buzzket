@@ -1,12 +1,16 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { EVENTS, CATEGORIES, formatDate } from "@/lib/mock-events";
+import { useQuery } from "@tanstack/react-query";
+import { CATEGORIES } from "@/lib/format";
+import { eventsQueryOptions } from "@/lib/data/events";
 import { EventCard } from "@/components/event-card";
 import { Navbar } from "@/components/navbar";
 import { Footer } from "@/components/footer";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { useState, useMemo } from "react";
-import { Search, TrendingUp, Sparkles } from "lucide-react";
+import { Search, TrendingUp, Sparkles, AlertCircle } from "lucide-react";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -17,16 +21,18 @@ export const Route = createFileRoute("/")({
       { property: "og:description", content: "Find and buy tickets for the best events in Kampala and across Uganda." },
     ],
   }),
+  loader: ({ context }) => context.queryClient.ensureQueryData(eventsQueryOptions()),
   component: Index,
 });
 
 function Index() {
   const [search, setSearch] = useState("");
   const [activeCat, setActiveCat] = useState("All");
+  const { data: events = [], isLoading, isError, error } = useQuery(eventsQueryOptions());
 
   const filtered = useMemo(() => {
     const term = search.trim().toLowerCase();
-    return EVENTS.filter((e) => {
+    return events.filter((e) => {
       const matchesCat = activeCat === "All" || e.category === activeCat;
       const matchesSearch =
         !term ||
@@ -36,10 +42,9 @@ function Index() {
         e.city.toLowerCase().includes(term);
       return matchesCat && matchesSearch;
     });
-  }, [search, activeCat]);
+  }, [search, activeCat, events]);
 
-  const featured = EVENTS.filter((e) => e.featured);
-  const happeningSoon = EVENTS.filter((e) => !e.featured);
+  const featured = events.filter((e) => e.featured);
 
   return (
     <div className="min-h-screen">
@@ -97,6 +102,18 @@ function Index() {
         </div>
       </div>
 
+      {isError && (
+        <section className="mx-auto max-w-7xl px-4 pt-8">
+          <Alert variant="destructive">
+            <AlertCircle className="h-4 w-4" />
+            <AlertTitle>Couldn't load events</AlertTitle>
+            <AlertDescription>
+              {error instanceof Error ? error.message : "Please try again shortly."}
+            </AlertDescription>
+          </Alert>
+        </section>
+      )}
+
       {/* Featured */}
       {featured.length > 0 && (
         <section className="mx-auto max-w-7xl px-4 pt-8">
@@ -118,7 +135,17 @@ function Index() {
         <div className="mb-4 flex items-center gap-2 text-xl font-bold">
           <TrendingUp className="h-5 w-5 text-primary" /> Happening Soon
         </div>
-        {filtered.length === 0 ? (
+        {isLoading ? (
+          <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+            {Array.from({ length: 8 }).map((_, i) => (
+              <div key={i} className="space-y-3">
+                <Skeleton className="h-40 w-full rounded-xl" />
+                <Skeleton className="h-4 w-3/4" />
+                <Skeleton className="h-4 w-1/2" />
+              </div>
+            ))}
+          </div>
+        ) : filtered.length === 0 ? (
           <div className="rounded-xl border p-12 text-center text-muted-foreground">
             No events found for "{search}".
           </div>

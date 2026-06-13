@@ -9,11 +9,23 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as ScanRouteImport } from './routes/scan'
+import { Route as LoginRouteImport } from './routes/login'
 import { Route as DashboardRouteImport } from './routes/dashboard'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as EventsEventIdRouteImport } from './routes/events.$eventId'
 import { Route as CheckoutEventIdRouteImport } from './routes/checkout.$eventId'
 
+const ScanRoute = ScanRouteImport.update({
+  id: '/scan',
+  path: '/scan',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const LoginRoute = LoginRouteImport.update({
+  id: '/login',
+  path: '/login',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const DashboardRoute = DashboardRouteImport.update({
   id: '/dashboard',
   path: '/dashboard',
@@ -38,12 +50,16 @@ const CheckoutEventIdRoute = CheckoutEventIdRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/dashboard': typeof DashboardRoute
+  '/login': typeof LoginRoute
+  '/scan': typeof ScanRoute
   '/checkout/$eventId': typeof CheckoutEventIdRoute
   '/events/$eventId': typeof EventsEventIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/dashboard': typeof DashboardRoute
+  '/login': typeof LoginRoute
+  '/scan': typeof ScanRoute
   '/checkout/$eventId': typeof CheckoutEventIdRoute
   '/events/$eventId': typeof EventsEventIdRoute
 }
@@ -51,18 +67,34 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/dashboard': typeof DashboardRoute
+  '/login': typeof LoginRoute
+  '/scan': typeof ScanRoute
   '/checkout/$eventId': typeof CheckoutEventIdRoute
   '/events/$eventId': typeof EventsEventIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/dashboard' | '/checkout/$eventId' | '/events/$eventId'
+  fullPaths:
+    | '/'
+    | '/dashboard'
+    | '/login'
+    | '/scan'
+    | '/checkout/$eventId'
+    | '/events/$eventId'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/dashboard' | '/checkout/$eventId' | '/events/$eventId'
+  to:
+    | '/'
+    | '/dashboard'
+    | '/login'
+    | '/scan'
+    | '/checkout/$eventId'
+    | '/events/$eventId'
   id:
     | '__root__'
     | '/'
     | '/dashboard'
+    | '/login'
+    | '/scan'
     | '/checkout/$eventId'
     | '/events/$eventId'
   fileRoutesById: FileRoutesById
@@ -70,12 +102,28 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   DashboardRoute: typeof DashboardRoute
+  LoginRoute: typeof LoginRoute
+  ScanRoute: typeof ScanRoute
   CheckoutEventIdRoute: typeof CheckoutEventIdRoute
   EventsEventIdRoute: typeof EventsEventIdRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/scan': {
+      id: '/scan'
+      path: '/scan'
+      fullPath: '/scan'
+      preLoaderRoute: typeof ScanRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/login': {
+      id: '/login'
+      path: '/login'
+      fullPath: '/login'
+      preLoaderRoute: typeof LoginRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/dashboard': {
       id: '/dashboard'
       path: '/dashboard'
@@ -110,6 +158,8 @@ declare module '@tanstack/react-router' {
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   DashboardRoute: DashboardRoute,
+  LoginRoute: LoginRoute,
+  ScanRoute: ScanRoute,
   CheckoutEventIdRoute: CheckoutEventIdRoute,
   EventsEventIdRoute: EventsEventIdRoute,
 }

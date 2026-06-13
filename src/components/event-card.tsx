@@ -1,6 +1,6 @@
 import { Link } from "@tanstack/react-router";
 import { Calendar, MapPin } from "lucide-react";
-import { type Event, formatDate, formatUGX } from "@/lib/mock-events";
+import { type Event, formatDate, formatUGX } from "@/lib/format";
 import { Card } from "@/components/ui/card";
 
 export function EventCard({ event, className = "" }: { event: Event; className?: string }) {
