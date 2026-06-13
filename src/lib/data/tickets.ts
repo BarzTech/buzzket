@@ -94,11 +94,17 @@ export const checkInTicket = createServerFn({ method: "POST" })
       return { status: "already_used", holder: ticket.holder_name };
     }
 
-    const { error: updErr } = await supabase
+    // Atomic compare-and-set: only the request that flips 'valid' -> 'used'
+    // succeeds, so concurrent scans of the same QR can't both check in.
+    const { error: updErr, count } = await supabase
       .from("tickets")
-      .update({ status: "used", used_at: new Date().toISOString() })
-      .eq("id", ticket.id);
+      .update({ status: "used", used_at: new Date().toISOString() }, { count: "exact" })
+      .eq("id", ticket.id)
+      .eq("status", "valid");
     if (updErr) throw new Error(updErr.message);
+    if (count === 0) {
+      return { status: "already_used", holder: ticket.holder_name };
+    }
 
     const { data: tier } = await supabase
       .from("ticket_tiers")

@@ -10,9 +10,17 @@ import { Card } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 
+// Only allow internal redirects: must be an absolute path and not a
+// protocol-relative ("//evil.com") or scheme URL. Defends against open redirect.
+function safeRedirect(value: unknown): string {
+  if (typeof value !== "string") return "/dashboard";
+  if (!value.startsWith("/") || value.startsWith("//")) return "/dashboard";
+  return value;
+}
+
 export const Route = createFileRoute("/login")({
   validateSearch: (search: Record<string, unknown>) => ({
-    redirect: typeof search.redirect === "string" ? search.redirect : "/dashboard",
+    redirect: safeRedirect(search.redirect),
   }),
   head: () => ({ meta: [{ title: "Sign in — Buzzket" }] }),
   component: Login,

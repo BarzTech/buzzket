@@ -50,12 +50,15 @@ function Checkout() {
   const [payError, setPayError] = useState<string | null>(null);
   const [qrTokens, setQrTokens] = useState<string[] | null>(null);
 
-  // Reserve inventory as soon as we have a valid tier.
+  // Reserve inventory as soon as we have a valid tier. Depend on the stable
+  // tier id (not the object) so react-query refetches don't spawn duplicate
+  // server-side holds.
+  const tierId = tier?.id;
   useEffect(() => {
-    if (!tier) return;
+    if (!tierId) return;
     let active = true;
     setReserveError(null);
-    reserveTickets({ data: { tierId: tier.id, qty } })
+    reserveTickets({ data: { tierId, qty } })
       .then((res) => {
         if (!active) return;
         setReservationId(res.reservationId);
@@ -67,7 +70,7 @@ function Checkout() {
     return () => {
       active = false;
     };
-  }, [tier, qty]);
+  }, [tierId, qty]);
 
   // Countdown.
   useEffect(() => {
@@ -78,7 +81,9 @@ function Checkout() {
     return () => clearInterval(id);
   }, [expiresAt]);
 
-  const expired = expiresAt !== null && remaining <= 0;
+  // Derive from the timestamp (not `remaining`, which starts at 0) so we don't
+  // flash "expired" for one frame before the countdown effect initialises.
+  const expired = expiresAt !== null && expiresAt <= Date.now();
   const mins = Math.floor(remaining / 60);
   const secs = String(remaining % 60).padStart(2, "0");
 
