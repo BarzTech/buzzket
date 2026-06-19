@@ -7,6 +7,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
+import type { Session } from "@supabase/supabase-js";
 
 import { getSupabaseBrowserClient, isSupabaseConfigured } from "../supabase/client";
 import { setSessionFlag, type SessionUser } from "./session";
@@ -32,6 +33,17 @@ type AuthContextValue = {
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
+function userFromSession(session: Session | null): SessionUser | null {
+  const sessionUser = session?.user;
+  if (!sessionUser) return null;
+
+  return {
+    id: sessionUser.id,
+    label: sessionUser.phone || sessionUser.email || "Account",
+    role: (sessionUser.user_metadata?.role as SessionUser["role"] | undefined) ?? "buyer",
+  };
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const supabaseEnabled = isSupabaseConfigured();
   const [user, setUser] = useState<SessionUser | null>(null);
@@ -47,27 +59,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
 
     supabase.auth.getSession().then(({ data }) => {
-      const s = data.session;
-      const next = s?.user
-        ? {
-            id: s.user.id,
-            label: s.user.phone || s.user.email || "Account",
-            role: (s.user.user_metadata?.role as SessionUser["role"] | undefined) ?? "buyer",
-          }
-        : null;
+      const next = userFromSession(data.session);
       setUser(next);
       setSessionFlag(next);
       setLoading(false);
     });
 
     const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
-      const next = session?.user
-        ? {
-            id: session.user.id,
-            label: session.user.phone || session.user.email || "Account",
-            role: (session.user.user_metadata?.role as SessionUser["role"] | undefined) ?? "buyer",
-          }
-        : null;
+      const next = userFromSession(session);
       setUser(next);
       setSessionFlag(next);
     });
@@ -79,7 +78,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     async (phone) => {
       const supabase = getSupabaseBrowserClient();
       if (!supabase) return { error: "Supabase is not configured. Add the launch environment variables first." };
-      const { error } = await supabase.auth.signInWithOtp({ phone });
+      const cleanPhone = phone.replace(/[^\d+]/g, "");
+      const { error } = await supabase.auth.signInWithOtp({ phone: cleanPhone });
       return { error: error?.message ?? null };
     },
     [],
@@ -89,7 +89,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     async (phone, token) => {
       const supabase = getSupabaseBrowserClient();
       if (!supabase) return { error: "Supabase is not configured. Add the launch environment variables first." };
-      const { error } = await supabase.auth.verifyOtp({ phone, token, type: "sms" });
+      const cleanPhone = phone.replace(/[^\d+]/g, "");
+      const { data, error } = await supabase.auth.verifyOtp({ phone: cleanPhone, token, type: "sms" });
+      const next = userFromSession(data.session);
+      setUser(next);
+      setSessionFlag(next);
       return { error: error?.message ?? null };
     },
     [],
@@ -99,7 +103,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     async (email, password) => {
       const supabase = getSupabaseBrowserClient();
       if (!supabase) return { error: "Supabase is not configured. Add the launch environment variables first." };
-      const { error } = await supabase.auth.signInWithPassword({ email, password });
+      const { data, error } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
+      const next = userFromSession(data.session);
+      setUser(next);
+      setSessionFlag(next);
       return { error: error?.message ?? null };
     },
     [],
@@ -109,11 +116,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     async (email, password, role = "buyer") => {
       const supabase = getSupabaseBrowserClient();
       if (!supabase) return { error: "Supabase is not configured. Add the launch environment variables first." };
-      const { error } = await supabase.auth.signUp({
-        email,
+      const { data, error } = await supabase.auth.signUp({
+        email: email.trim(),
         password,
         options: { data: { role } },
       });
+      const next = userFromSession(data.session);
+      setUser(next);
+      setSessionFlag(next);
       return { error: error?.message ?? null };
     },
     [],

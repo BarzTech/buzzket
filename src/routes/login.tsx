@@ -45,23 +45,34 @@ function Login() {
   const [mode, setMode] = useState<"signin" | "signup">("signin");
 
   const done = () => navigate({ to: redirect });
+  const doneAfterBuyerSignup = () => navigate({ to: redirect === "/dashboard" ? "/browse" : redirect });
 
-  const run = async (fn: () => Promise<{ error: string | null }>) => {
+  const run = async (fn: () => Promise<{ error: string | null }>, onSuccess = done) => {
     setBusy(true);
     setError(null);
-    const { error } = await fn();
-    setBusy(false);
-    if (error) setError(error);
-    else done();
+    try {
+      const { error } = await fn();
+      if (error) setError(error);
+      else onSuccess();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Sign-in failed. Check your connection and try again.");
+    } finally {
+      setBusy(false);
+    }
   };
 
   const sendOtp = async () => {
     setBusy(true);
     setError(null);
-    const { error } = await auth.signInWithPhone(phone);
-    setBusy(false);
-    if (error) setError(error);
-    else setOtpSent(true);
+    try {
+      const { error } = await auth.signInWithPhone(phone);
+      if (error) setError(error);
+      else setOtpSent(true);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not send the code. Check your connection and try again.");
+    } finally {
+      setBusy(false);
+    }
   };
 
   return (
@@ -151,11 +162,12 @@ function Login() {
             </div>
             <Button
               onClick={() =>
-                run(() =>
-                  mode === "signin"
-                    ? auth.signInWithEmail(email, password)
-                    : auth.signUpWithEmail(email, password, "buyer"),
-                )
+                mode === "signin"
+                  ? run(() => auth.signInWithEmail(email, password))
+                  : run(
+                      () => auth.signUpWithEmail(email, password, "buyer"),
+                      doneAfterBuyerSignup,
+                    )
               }
               disabled={busy || !email || !password}
               className="w-full bg-cta text-cta-foreground hover:bg-cta/90 font-semibold"
