@@ -286,12 +286,8 @@ export const verifyPesapalPayment = createServerFn({ method: "POST" })
     if (error) {
       // If it fails because it's already confirmed, let's fetch the existing tickets instead of crashing
       if (error.message.includes("Reservation is no longer active") || error.message.includes("already confirmed")) {
-        const { data: existingTickets, error: fetchErr } = await supabase
-          .from("tickets")
-          .select("qr_token")
-          .eq("order_id", data.reservationId); // In our schema, the reservation ID or order matches. Wait, confirm_reservation creates a new order. Let's see how.
-        // Wait, confirm_reservation creates a new order and assigns order_id to reservation.
-        // Let's get the confirmed reservation order_id first.
+        // Since confirm_reservation assigns a new order_id to the reservation,
+        // let's fetch the order_id from the confirmed reservation first.
         const { data: resv } = await supabase
           .from("reservations")
           .select("order_id")

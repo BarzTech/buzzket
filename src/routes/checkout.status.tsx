@@ -1,8 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
-import { Loader2, CheckCircle, AlertCircle, Ticket as TicketIcon } from "lucide-react";
-import { eventQueryOptions } from "@/lib/data/events";
+import { Loader2, CheckCircle, AlertCircle } from "lucide-react";
 import { verifyPesapalPayment } from "@/lib/data/tickets";
 import { Navbar } from "@/components/navbar";
 import { Button } from "@/components/ui/button";

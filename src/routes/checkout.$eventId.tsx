@@ -13,7 +13,7 @@ import { Separator } from "@/components/ui/separator";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Ticket } from "@/components/ticket";
 import { useEffect, useState } from "react";
-import { CreditCard, Smartphone, CheckCircle, Wallet, ShieldCheck, Clock, AlertCircle, Loader2 } from "lucide-react";
+import { CheckCircle, ShieldCheck, Clock, AlertCircle, Loader2 } from "lucide-react";
 
 export const Route = createFileRoute("/checkout/$eventId")({
   validateSearch: (search: Record<string, unknown>) => ({
@@ -41,7 +41,6 @@ function Checkout() {
 
   const [step, setStep] = useState(1);
   const [contact, setContact] = useState({ name: "", email: "", phone: "" });
-  const [payment, setPayment] = useState<"mtn" | "airtel" | "card">("mtn");
 
   // Reservation state (10-minute hold created server-side via row-locking RPC).
   const [reservationId, setReservationId] = useState<string | null>(null);
@@ -51,7 +50,7 @@ function Checkout() {
 
   const [paying, setPaying] = useState(false);
   const [payError, setPayError] = useState<string | null>(null);
-  const [qrTokens, setQrTokens] = useState<string[] | null>(null);
+  const qrTokens: string[] | null = null;
 
   // Reserve inventory as soon as we have a valid tier. Depend on the stable
   // tier id (not the object) so react-query refetches don't spawn duplicate
@@ -272,7 +271,7 @@ function Checkout() {
                 <h2 className="text-lg font-semibold">3. Payment</h2>
                 <div className="flex items-center gap-2 rounded-lg border border-primary/30 bg-primary/5 p-3 text-xs text-foreground">
                   <ShieldCheck className="h-4 w-4 text-primary" />
-                  <span>Secured by <strong>Pesapal</strong> — East Africa's trusted payment gateway.</span>
+                  <span>Secured by <strong>Pesapal</strong> — East Africa&apos;s trusted payment gateway.</span>
                 </div>
                 <div className="rounded-xl border p-5 bg-card space-y-3">
                   <div className="font-semibold text-sm">Select payment method on Pesapal:</div>
