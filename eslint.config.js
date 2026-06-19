@@ -5,7 +5,7 @@ import pluginReactConfig from "eslint-plugin-react/configs/recommended.js";
 export default [
   { languageOptions: { globals: globals.browser } },
   {
-    ignores: ["dist/**", "src/components/ui/**"],
+    ignores: ["dist/**", ".output/**", ".vercel/**", "node_modules/.nitro/**", "src/components/ui/**"],
   },
   ...tseslint.configs.recommended,
   {
