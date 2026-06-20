@@ -133,7 +133,7 @@ function Dashboard() {
               <div className="flex items-center justify-between">
                 <h1 className="text-2xl font-bold">My Events</h1>
                 <Button asChild className="bg-cta text-cta-foreground hover:bg-cta/90 font-semibold">
-                  <Link to="/dashboard/form" search={{ eventId: undefined }}>+ Create Event</Link>
+                  <Link to="/dashboard/form">+ Create Event</Link>
                 </Button>
               </div>
               <Card className="divide-y">

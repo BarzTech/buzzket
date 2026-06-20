@@ -42,10 +42,12 @@ const eventFormSchema = z.object({
 
 type EventFormValues = z.infer<typeof eventFormSchema>;
 
+const eventSearchSchema = z.object({
+  eventId: z.string().optional(),
+});
+
 export const Route = createFileRoute("/dashboard/form")({
-  validateSearch: (search: Record<string, unknown>) => ({
-    eventId: search.eventId ? String(search.eventId) : undefined,
-  }),
+  validateSearch: (search) => eventSearchSchema.parse(search),
   beforeLoad: ({ location }) => requireRoleOrRedirect(["organizer", "admin"], location.href),
   loaderDeps: ({ search: { eventId } }) => ({ eventId }),
   loader: ({ context, deps: { eventId } }) =>
