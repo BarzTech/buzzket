@@ -6,12 +6,17 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { ArrowRight } from "lucide-react";
 
+import { getStoredUser } from "@/lib/auth/session";
+
 export const Route = createFileRoute("/sell-tickets")({
   head: () => ({ meta: [{ title: "Sell Tickets — Buzzket" }] }),
   component: SellTickets,
 });
 
 function SellTickets() {
+  const user = getStoredUser();
+  const isOrganizerOrAdmin = user && (user.role === "organizer" || user.role === "admin");
+
   return (
     <PageShell
       title="Sell tickets with Buzzket"
@@ -35,13 +40,21 @@ function SellTickets() {
       <Card className="mt-8 rounded-3xl p-8 text-center">
         <p className="text-lg font-medium text-foreground">Ready to start selling?</p>
         <p className="mt-3 text-sm text-muted-foreground">
-          Sign in to your organizer account to create your first event and start accepting reservations.
+          {isOrganizerOrAdmin
+            ? "Go to your dashboard to publish events and track ticket sales."
+            : "Sign in to your organizer account to create your first event and start accepting reservations."}
         </p>
         <div className="mt-6 flex justify-center">
           <Button asChild className="rounded-xl bg-cta text-cta-foreground hover:bg-cta/90 px-6 py-3">
-            <Link to="/login" search={{ redirect: "/dashboard" }}>
-              Get started <ArrowRight className="ml-2 h-4 w-4" />
-            </Link>
+            {isOrganizerOrAdmin ? (
+              <Link to="/dashboard">
+                Go to Dashboard <ArrowRight className="ml-2 h-4 w-4" />
+              </Link>
+            ) : (
+              <Link to="/login" search={{ redirect: "/dashboard" }}>
+                Get started <ArrowRight className="ml-2 h-4 w-4" />
+              </Link>
+            )}
           </Button>
         </div>
       </Card>

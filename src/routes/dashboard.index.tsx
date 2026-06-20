@@ -73,9 +73,34 @@ function Dashboard() {
 
         {/* Main */}
         <main className="flex-1 min-w-0">
+          {/* Mobile Tab Switcher */}
+          <div className="mb-6 flex gap-2 md:hidden">
+            {[
+              { id: "overview" as const, label: "Overview" },
+              { id: "events" as const, label: "My Events" },
+            ].map((t) => (
+              <button
+                key={t.id}
+                onClick={() => setTab(t.id)}
+                className={`flex-1 rounded-lg py-2 text-center text-sm font-semibold transition-colors ${
+                  tab === t.id
+                    ? "bg-primary text-primary-foreground"
+                    : "bg-muted text-muted-foreground hover:bg-muted/80"
+                }`}
+              >
+                {t.label}
+              </button>
+            ))}
+          </div>
+
           {tab === "overview" && (
             <div className="space-y-6">
-              <h1 className="text-2xl font-bold">Dashboard Overview</h1>
+              <div className="flex items-center justify-between">
+                <h1 className="text-2xl font-bold">Dashboard Overview</h1>
+                <Button asChild className="bg-cta text-cta-foreground hover:bg-cta/90 font-semibold">
+                  <Link to="/dashboard/form">+ Create Event</Link>
+                </Button>
+              </div>
               <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
                 {[
                   { label: "Total Sales (UGX)", value: new Intl.NumberFormat("en-UG").format(stats?.totalSales ?? 0), sub: "All time", accent: true },
