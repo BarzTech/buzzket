@@ -13,10 +13,11 @@ import { Navbar } from "@/components/navbar";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
+import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Loader2, Trash2, ArrowLeft, AlertCircle } from "lucide-react";
 
 const eventFormSchema = z.object({
@@ -256,10 +257,10 @@ function EventForm() {
               </div>
               
               <div className="space-y-4 rounded-xl border p-4 bg-muted/10">
-                <FormLabel className="text-base">Event Cover Image</FormLabel>
+                <Label className="text-base">Event Cover Image</Label>
                 <div className="grid gap-4 md:grid-cols-2">
                   <div className="space-y-2">
-                    <FormLabel htmlFor="image-file" className="text-xs">Upload Cover Image</FormLabel>
+                    <Label htmlFor="image-file" className="text-xs">Upload Cover Image</Label>
                     <Input
                       id="image-file"
                       type="file"
