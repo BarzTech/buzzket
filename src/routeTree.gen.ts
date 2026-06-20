@@ -15,7 +15,6 @@ import { Route as ResourcesRouteImport } from './routes/resources'
 import { Route as PrivacyRouteImport } from './routes/privacy'
 import { Route as PricingRouteImport } from './routes/pricing'
 import { Route as LoginRouteImport } from './routes/login'
-import { Route as DashboardRouteImport } from './routes/dashboard'
 import { Route as ContactRouteImport } from './routes/contact'
 import { Route as CitiesRouteImport } from './routes/cities'
 import { Route as CategoriesRouteImport } from './routes/categories'
@@ -23,6 +22,7 @@ import { Route as BrowseRouteImport } from './routes/browse'
 import { Route as AdminRouteImport } from './routes/admin'
 import { Route as AboutRouteImport } from './routes/about'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as DashboardIndexRouteImport } from './routes/dashboard.index'
 import { Route as OrganizerRegisterRouteImport } from './routes/organizer.register'
 import { Route as EventsEventIdRouteImport } from './routes/events.$eventId'
 import { Route as DashboardFormRouteImport } from './routes/dashboard.form'
@@ -60,11 +60,6 @@ const LoginRoute = LoginRouteImport.update({
   path: '/login',
   getParentRoute: () => rootRouteImport,
 } as any)
-const DashboardRoute = DashboardRouteImport.update({
-  id: '/dashboard',
-  path: '/dashboard',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const ContactRoute = ContactRouteImport.update({
   id: '/contact',
   path: '/contact',
@@ -100,6 +95,11 @@ const IndexRoute = IndexRouteImport.update({
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const DashboardIndexRoute = DashboardIndexRouteImport.update({
+  id: '/dashboard/',
+  path: '/dashboard/',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const OrganizerRegisterRoute = OrganizerRegisterRouteImport.update({
   id: '/organizer/register',
   path: '/organizer/register',
@@ -111,9 +111,9 @@ const EventsEventIdRoute = EventsEventIdRouteImport.update({
   getParentRoute: () => rootRouteImport,
 } as any)
 const DashboardFormRoute = DashboardFormRouteImport.update({
-  id: '/form',
-  path: '/form',
-  getParentRoute: () => DashboardRoute,
+  id: '/dashboard/form',
+  path: '/dashboard/form',
+  getParentRoute: () => rootRouteImport,
 } as any)
 const CheckoutStatusRoute = CheckoutStatusRouteImport.update({
   id: '/checkout/status',
@@ -139,7 +139,6 @@ export interface FileRoutesByFullPath {
   '/categories': typeof CategoriesRoute
   '/cities': typeof CitiesRoute
   '/contact': typeof ContactRoute
-  '/dashboard': typeof DashboardRouteWithChildren
   '/login': typeof LoginRoute
   '/pricing': typeof PricingRoute
   '/privacy': typeof PrivacyRoute
@@ -152,6 +151,7 @@ export interface FileRoutesByFullPath {
   '/dashboard/form': typeof DashboardFormRoute
   '/events/$eventId': typeof EventsEventIdRoute
   '/organizer/register': typeof OrganizerRegisterRoute
+  '/dashboard/': typeof DashboardIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -161,7 +161,6 @@ export interface FileRoutesByTo {
   '/categories': typeof CategoriesRoute
   '/cities': typeof CitiesRoute
   '/contact': typeof ContactRoute
-  '/dashboard': typeof DashboardRouteWithChildren
   '/login': typeof LoginRoute
   '/pricing': typeof PricingRoute
   '/privacy': typeof PrivacyRoute
@@ -174,6 +173,7 @@ export interface FileRoutesByTo {
   '/dashboard/form': typeof DashboardFormRoute
   '/events/$eventId': typeof EventsEventIdRoute
   '/organizer/register': typeof OrganizerRegisterRoute
+  '/dashboard': typeof DashboardIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -184,7 +184,6 @@ export interface FileRoutesById {
   '/categories': typeof CategoriesRoute
   '/cities': typeof CitiesRoute
   '/contact': typeof ContactRoute
-  '/dashboard': typeof DashboardRouteWithChildren
   '/login': typeof LoginRoute
   '/pricing': typeof PricingRoute
   '/privacy': typeof PrivacyRoute
@@ -197,6 +196,7 @@ export interface FileRoutesById {
   '/dashboard/form': typeof DashboardFormRoute
   '/events/$eventId': typeof EventsEventIdRoute
   '/organizer/register': typeof OrganizerRegisterRoute
+  '/dashboard/': typeof DashboardIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -208,7 +208,6 @@ export interface FileRouteTypes {
     | '/categories'
     | '/cities'
     | '/contact'
-    | '/dashboard'
     | '/login'
     | '/pricing'
     | '/privacy'
@@ -221,6 +220,7 @@ export interface FileRouteTypes {
     | '/dashboard/form'
     | '/events/$eventId'
     | '/organizer/register'
+    | '/dashboard/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -230,7 +230,6 @@ export interface FileRouteTypes {
     | '/categories'
     | '/cities'
     | '/contact'
-    | '/dashboard'
     | '/login'
     | '/pricing'
     | '/privacy'
@@ -243,6 +242,7 @@ export interface FileRouteTypes {
     | '/dashboard/form'
     | '/events/$eventId'
     | '/organizer/register'
+    | '/dashboard'
   id:
     | '__root__'
     | '/'
@@ -252,7 +252,6 @@ export interface FileRouteTypes {
     | '/categories'
     | '/cities'
     | '/contact'
-    | '/dashboard'
     | '/login'
     | '/pricing'
     | '/privacy'
@@ -265,6 +264,7 @@ export interface FileRouteTypes {
     | '/dashboard/form'
     | '/events/$eventId'
     | '/organizer/register'
+    | '/dashboard/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -275,7 +275,6 @@ export interface RootRouteChildren {
   CategoriesRoute: typeof CategoriesRoute
   CitiesRoute: typeof CitiesRoute
   ContactRoute: typeof ContactRoute
-  DashboardRoute: typeof DashboardRouteWithChildren
   LoginRoute: typeof LoginRoute
   PricingRoute: typeof PricingRoute
   PrivacyRoute: typeof PrivacyRoute
@@ -284,8 +283,10 @@ export interface RootRouteChildren {
   SellTicketsRoute: typeof SellTicketsRoute
   CheckoutEventIdRoute: typeof CheckoutEventIdRoute
   CheckoutStatusRoute: typeof CheckoutStatusRoute
+  DashboardFormRoute: typeof DashboardFormRoute
   EventsEventIdRoute: typeof EventsEventIdRoute
   OrganizerRegisterRoute: typeof OrganizerRegisterRoute
+  DashboardIndexRoute: typeof DashboardIndexRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -330,13 +331,6 @@ declare module '@tanstack/react-router' {
       path: '/login'
       fullPath: '/login'
       preLoaderRoute: typeof LoginRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/dashboard': {
-      id: '/dashboard'
-      path: '/dashboard'
-      fullPath: '/dashboard'
-      preLoaderRoute: typeof DashboardRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/contact': {
@@ -388,6 +382,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/dashboard/': {
+      id: '/dashboard/'
+      path: '/dashboard'
+      fullPath: '/dashboard/'
+      preLoaderRoute: typeof DashboardIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/organizer/register': {
       id: '/organizer/register'
       path: '/organizer/register'
@@ -404,10 +405,10 @@ declare module '@tanstack/react-router' {
     }
     '/dashboard/form': {
       id: '/dashboard/form'
-      path: '/form'
+      path: '/dashboard/form'
       fullPath: '/dashboard/form'
       preLoaderRoute: typeof DashboardFormRouteImport
-      parentRoute: typeof DashboardRoute
+      parentRoute: typeof rootRouteImport
     }
     '/checkout/status': {
       id: '/checkout/status'
@@ -443,18 +444,6 @@ const AdminRouteChildren: AdminRouteChildren = {
 
 const AdminRouteWithChildren = AdminRoute._addFileChildren(AdminRouteChildren)
 
-interface DashboardRouteChildren {
-  DashboardFormRoute: typeof DashboardFormRoute
-}
-
-const DashboardRouteChildren: DashboardRouteChildren = {
-  DashboardFormRoute: DashboardFormRoute,
-}
-
-const DashboardRouteWithChildren = DashboardRoute._addFileChildren(
-  DashboardRouteChildren,
-)
-
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AboutRoute: AboutRoute,
@@ -463,7 +452,6 @@ const rootRouteChildren: RootRouteChildren = {
   CategoriesRoute: CategoriesRoute,
   CitiesRoute: CitiesRoute,
   ContactRoute: ContactRoute,
-  DashboardRoute: DashboardRouteWithChildren,
   LoginRoute: LoginRoute,
   PricingRoute: PricingRoute,
   PrivacyRoute: PrivacyRoute,
@@ -472,8 +460,10 @@ const rootRouteChildren: RootRouteChildren = {
   SellTicketsRoute: SellTicketsRoute,
   CheckoutEventIdRoute: CheckoutEventIdRoute,
   CheckoutStatusRoute: CheckoutStatusRoute,
+  DashboardFormRoute: DashboardFormRoute,
   EventsEventIdRoute: EventsEventIdRoute,
   OrganizerRegisterRoute: OrganizerRegisterRoute,
+  DashboardIndexRoute: DashboardIndexRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

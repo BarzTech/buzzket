@@ -11,7 +11,7 @@ import { Separator } from "@/components/ui/separator";
 import { LayoutDashboard, Calendar, Ticket, TrendingUp, Users, Settings, Edit3, Eye } from "lucide-react";
 import { useState } from "react";
 
-export const Route = createFileRoute("/dashboard")({
+export const Route = createFileRoute("/dashboard/")({
   head: () => ({
     meta: [
       { title: "Organizer Dashboard — Buzzket" },
@@ -57,12 +57,12 @@ function Dashboard() {
                 { id: "settings" as const, icon: Settings, label: "Settings", disabled: true },
               ].map((item) => (
                 <button
-                  key={item.id}
-                  disabled={item.disabled}
-                  onClick={() => setTab(item.id as typeof tab)}
-                  className={`flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
-                    tab === item.id ? "bg-primary/10 text-primary" : "text-muted-foreground hover:bg-accent hover:text-foreground"
-                  }`}
+                   key={item.id}
+                   disabled={item.disabled}
+                   onClick={() => setTab(item.id as typeof tab)}
+                   className={`flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
+                     tab === item.id ? "bg-primary/10 text-primary" : "text-muted-foreground hover:bg-accent hover:text-foreground"
+                   }`}
                 >
                   <item.icon className="h-4 w-4" /> {item.label}
                 </button>
@@ -99,12 +99,12 @@ function Dashboard() {
                   </div>
                   <div className="grid grid-cols-2 gap-6 text-sm">
                     <div>
-                      <div className="text-xs text-muted-foreground">Platform fee</div>
-                      <div className="font-bold">UGX {new Intl.NumberFormat("en-UG").format(stats?.platformCommission ?? 0)}</div>
+                       <div className="text-xs text-muted-foreground">Platform fee</div>
+                       <div className="font-bold">UGX {new Intl.NumberFormat("en-UG").format(stats?.platformCommission ?? 0)}</div>
                     </div>
                     <div>
-                      <div className="text-xs text-muted-foreground">Your net payout</div>
-                      <div className="font-bold text-primary">UGX {new Intl.NumberFormat("en-UG").format(stats?.organizerPayout ?? 0)}</div>
+                       <div className="text-xs text-muted-foreground">Your net payout</div>
+                       <div className="font-bold text-primary">UGX {new Intl.NumberFormat("en-UG").format(stats?.organizerPayout ?? 0)}</div>
                     </div>
                   </div>
                 </div>
