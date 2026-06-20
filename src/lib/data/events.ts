@@ -151,34 +151,46 @@ export const eventQueryOptions = (eventId: string) =>
         .select(
           `
           id, title, category, date, venue, city, image, description, featured,
-          price_from, organizer_name, organizer_avatar, organizer_id,
-          tiers:ticket_tiers(id, name, price, quantity_total, quantity_sold, available:tier_availability(available))
+          price_from, organizer_name, organizer_avatar, organizer_id
         `,
         )
         .eq("id", eventId)
         .single();
       if (error) throw new Error(error.message);
-      // The `available` field is a nested singleton array from the view, so we
-      // have to use `transform` to pluck it out before parsing.
+
+      const [
+        { data: tiers = [], error: tiersError },
+        { data: availabilityRows = [], error: availabilityError },
+      ] = await Promise.all([
+        supabase
+          .from("ticket_tiers")
+          .select("id, name, price, quantity_total, quantity_sold")
+          .eq("event_id", eventId),
+        supabase
+          .from("tier_availability")
+          .select("id, available")
+          .eq("event_id", eventId),
+      ]);
+      if (tiersError) throw new Error(tiersError.message);
+      if (availabilityError) throw new Error(availabilityError.message);
+
+      const availabilityByTier = new Map(
+        (availabilityRows ?? []).map((row) => [row.id, row.available]),
+      );
+
       const transformed = {
         ...data,
         priceFrom: data.price_from,
         organizerId: data.organizer_id,
         organizer: { name: data.organizer_name, avatar: data.organizer_avatar },
-        tiers: (data.tiers ?? []).map((t) => {
-          const availability = t.available as { available: number } | { available: number }[] | null;
-          const available = Array.isArray(availability)
-            ? availability[0]?.available ?? 0
-            : availability?.available ?? 0;
-          return {
-            id: t.id,
-            name: t.name,
-            price: t.price,
-            quantity_total: t.quantity_total,
-            quantity_sold: t.quantity_sold,
-            available,
-          };
-        }),
+        tiers: (tiers ?? []).map((tier) => ({
+          id: tier.id,
+          name: tier.name,
+          price: tier.price,
+          quantity_total: tier.quantity_total,
+          quantity_sold: tier.quantity_sold,
+          available: availabilityByTier.get(tier.id) ?? 0,
+        })),
       };
       return eventSchema.parse(transformed);
     },
