@@ -9,12 +9,14 @@ import { Label } from "@/components/ui/label";
 import { Card } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import { getStoredUser } from "@/lib/auth/session";
 
 // Only allow internal redirects: must be an absolute path and not a
 // protocol-relative ("//evil.com") or scheme URL. Defends against open redirect.
 function safeRedirect(value: unknown): string {
-  if (typeof value !== "string") return "/dashboard";
-  if (!value.startsWith("/") || value.startsWith("//")) return "/dashboard";
+  if (typeof value !== "string") return "/browse";
+  if (!value.startsWith("/") || value.startsWith("//")) return "/browse";
+  if (value.startsWith("/login") || value.startsWith("/admin/login") || value.length > 200) return "/browse";
   return value;
 }
 
@@ -44,7 +46,13 @@ function Login() {
   const [password, setPassword] = useState("");
   const [mode, setMode] = useState<"signin" | "signup">("signin");
 
-  const done = () => navigate({ to: redirect });
+  const roleDestination = () => {
+    const role = getStoredUser()?.role;
+    if (role === "admin") return "/admin";
+    if (role === "organizer") return "/dashboard";
+    return redirect === "/dashboard" || redirect === "/admin" ? "/browse" : redirect;
+  };
+  const done = () => navigate({ to: roleDestination() });
   const doneAfterBuyerSignup = () => navigate({ to: redirect === "/dashboard" ? "/browse" : redirect });
 
   const run = async (fn: () => Promise<{ error: string | null }>, onSuccess = done) => {
@@ -120,7 +128,7 @@ function Login() {
                 placeholder="+256 7XX XXX XXX"
                 value={phone}
                 onChange={(e) => setPhone(e.target.value)}
-                disabled={otpSent}
+                disabled={otpSent || busy}
               />
             </div>
             {otpSent && (
@@ -132,6 +140,7 @@ function Login() {
                   placeholder="6-digit code"
                   value={otp}
                   onChange={(e) => setOtp(e.target.value)}
+                  disabled={busy}
                 />
               </div>
             )}
@@ -154,11 +163,11 @@ function Login() {
           <TabsContent value="email" className="space-y-4 pt-4">
             <div>
               <Label htmlFor="email">Email</Label>
-              <Input id="email" type="email" placeholder="you@example.com" value={email} onChange={(e) => setEmail(e.target.value)} />
+              <Input id="email" type="email" placeholder="you@example.com" value={email} onChange={(e) => setEmail(e.target.value)} disabled={busy} />
             </div>
             <div>
               <Label htmlFor="password">Password</Label>
-              <Input id="password" type="password" placeholder="••••••••" value={password} onChange={(e) => setPassword(e.target.value)} />
+              <Input id="password" type="password" placeholder="••••••••" value={password} onChange={(e) => setPassword(e.target.value)} disabled={busy} />
             </div>
             <Button
               onClick={() =>

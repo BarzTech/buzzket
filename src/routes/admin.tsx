@@ -57,6 +57,7 @@ import {
   type PromoEvent,
 } from "@/lib/admin/promo-store";
 import { requireRoleOrRedirect } from "@/lib/auth/guard";
+import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 
 export const Route = createFileRoute("/admin")({
   beforeLoad: ({ location }) => requireRoleOrRedirect("admin", location.href),
@@ -946,13 +947,23 @@ function AdminPage() {
   const [organizers, setOrganizers] = useState<OrganizerRow[]>([]);
   const [orders, setOrders] = useState<PlatformOrder[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   useEffect(() => {
-    Promise.all([
-      getAdminPayouts(),
-      getAdminOrganizers(),
-      getAdminOrders(),
-    ])
+    const load = async () => {
+      const supabase = getSupabaseBrowserClient();
+      const { data } = supabase ? await supabase.auth.getSession() : { data: { session: null } };
+      const accessToken = data.session?.access_token;
+      if (!accessToken) throw new Error("Admin session is missing. Please sign in again.");
+
+      return Promise.all([
+        getAdminPayouts({ data: { accessToken } }),
+        getAdminOrganizers({ data: { accessToken } }),
+        getAdminOrders({ data: { accessToken } }),
+      ]);
+    };
+
+    load()
       .then(([payoutsRes, organizersRes, ordersRes]) => {
         let mergedPayouts = payoutsRes;
         if (typeof window !== "undefined") {
@@ -974,7 +985,10 @@ function AdminPage() {
         setOrganizers(organizersRes);
         setOrders(ordersRes);
       })
-      .catch((err) => console.error("Failed to load admin data", err))
+      .catch((err) => {
+        console.error("Failed to load admin data", err);
+        setLoadError(err instanceof Error ? err.message : "Failed to load admin data.");
+      })
       .finally(() => setLoading(false));
   }, []);
 
@@ -999,6 +1013,20 @@ function AdminPage() {
     return (
       <div className="flex min-h-screen items-center justify-center bg-background text-muted-foreground text-sm">
         Loading admin console...
+      </div>
+    );
+  }
+
+  if (loadError) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-background px-4 text-center">
+        <div>
+          <h1 className="text-xl font-semibold">Admin console locked</h1>
+          <p className="mt-2 max-w-md text-sm text-muted-foreground">{loadError}</p>
+          <a href="/admin/login" className="mt-5 inline-flex rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground">
+            Sign in again
+          </a>
+        </div>
       </div>
     );
   }

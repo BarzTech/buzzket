@@ -1,7 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
-import { Loader2, CheckCircle, AlertCircle } from "lucide-react";
-import { verifyPesapalPayment } from "@/lib/data/tickets";
+import { Loader2, CheckCircle, AlertCircle, MailCheck, MailWarning } from "lucide-react";
+import { verifyPesapalPayment, type IssuedTicket } from "@/lib/data/tickets";
 import { Navbar } from "@/components/navbar";
 import { Button } from "@/components/ui/button";
 import { Ticket } from "@/components/ticket";
@@ -27,13 +27,8 @@ function CheckoutStatus() {
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [qrTokens, setQrTokens] = useState<string[] | null>(null);
-
-  // We need the event details to render the tickets nicely.
-  // We can fetch the event details using the reservation details or let the user redirect.
-  // Wait, let's fetch event details if we can, but if not, we can display ticket placeholder info.
-  // Let's get the eventId by querying supabase or just parsing from search if possible. But wait,
-  // we don't have eventId in search. Let's make sure our verification works first.
+  const [tickets, setTickets] = useState<IssuedTicket[] | null>(null);
+  const [emailStatus, setEmailStatus] = useState<{ sent: boolean; message: string } | null>(null);
 
   useEffect(() => {
     if (!trackingId || !reservationId) {
@@ -56,7 +51,8 @@ function CheckoutStatus() {
     })
       .then((res) => {
         if (!active) return;
-        setQrTokens(res.qrTokens);
+        setTickets(res.tickets);
+        setEmailStatus(res.email);
         setLoading(false);
       })
       .catch((e: unknown) => {
@@ -101,26 +97,37 @@ function CheckoutStatus() {
           </div>
         )}
 
-        {qrTokens && !loading && (
+        {tickets && !loading && (
           <div className="space-y-8 text-center">
             <div className="mx-auto grid h-20 w-20 place-items-center rounded-full bg-primary/10">
               <CheckCircle className="h-10 w-10 text-primary" />
             </div>
             <h2 className="text-2xl font-bold">Booking Confirmed!</h2>
             <p className="text-muted-foreground">
-              Your {qrTokens.length} ticket{qrTokens.length > 1 ? "s" : ""} {qrTokens.length > 1 ? "have" : "has"} been issued.
+              Your {tickets.length} ticket{tickets.length > 1 ? "s" : ""} {tickets.length > 1 ? "have" : "has"} been issued.
             </p>
+            {emailStatus && (
+              <div className={`mx-auto flex max-w-xl items-center gap-2 rounded-lg p-3 text-left text-sm ${
+                emailStatus.sent ? "bg-green-500/10 text-green-700 dark:text-green-400" : "bg-amber-500/10 text-amber-700 dark:text-amber-400"
+              }`}>
+                {emailStatus.sent ? <MailCheck className="h-5 w-5" /> : <MailWarning className="h-5 w-5" />}
+                {emailStatus.message}
+              </div>
+            )}
             <div className="mt-8 space-y-6 text-left">
-              {qrTokens.map((token, i) => (
+              {tickets.map((ticket) => (
                 <Ticket
-                  key={token}
-                  eventTitle="Buzzket Event"
-                  date="Scheduled Date"
-                  venue="Confirmed Venue"
-                  tier="General Admission"
-                  holder={search.contactName || `Guest ${i + 1}`}
-                  price={Number(search.unitPrice)}
-                  qrToken={token}
+                  key={ticket.id}
+                  eventTitle={ticket.event.title}
+                  date={ticket.event.date}
+                  venue={ticket.event.venue}
+                  city={ticket.event.city}
+                  image={ticket.event.image}
+                  tier={ticket.tier}
+                  holder={ticket.holder}
+                  price={ticket.price}
+                  qrToken={ticket.qrToken}
+                  issuedTicket={ticket}
                 />
               ))}
             </div>

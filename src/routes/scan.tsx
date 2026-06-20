@@ -1,6 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
 import { Camera, ScanLine, CheckCircle2, XCircle, AlertTriangle, Loader2 } from "lucide-react";
+import { BrowserQRCodeReader, type IScannerControls } from "@zxing/browser";
 
 import { requireRoleOrRedirect } from "@/lib/auth/guard";
 import { checkInTicketClient, type CheckInResult } from "@/lib/data/tickets";
@@ -9,17 +10,6 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-
-type DetectedBarcode = { rawValue: string };
-type BarcodeDetectorCtor = new (options?: { formats?: string[] }) => {
-  detect: (source: HTMLVideoElement) => Promise<DetectedBarcode[]>;
-};
-
-declare global {
-  interface Window {
-    BarcodeDetector?: BarcodeDetectorCtor;
-  }
-}
 
 export const Route = createFileRoute("/scan")({
   head: () => ({ meta: [{ title: "Ticket Scanning — Buzzket" }] }),
@@ -36,7 +26,8 @@ function Scan() {
   const [cameraActive, setCameraActive] = useState(false);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
-  const scanningRef = useRef(false);
+  const scannerControlsRef = useRef<IScannerControls | null>(null);
+  const lastScanRef = useRef("");
 
   const submit = async (value = token) => {
     const clean = value.trim();
@@ -56,7 +47,8 @@ function Scan() {
   };
 
   const stopCamera = () => {
-    scanningRef.current = false;
+    scannerControlsRef.current?.stop();
+    scannerControlsRef.current = null;
     streamRef.current?.getTracks().forEach((track) => track.stop());
     streamRef.current = null;
     setCameraActive(false);
@@ -64,43 +56,37 @@ function Scan() {
 
   const startCamera = async () => {
     setCameraError(null);
-    if (!window.BarcodeDetector) {
-      setCameraError("This browser does not support camera QR detection. Use manual token entry on this device.");
-      return;
-    }
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: { ideal: "environment" } },
-        audio: false,
-      });
-      streamRef.current = stream;
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-        await videoRef.current.play();
+      if (!navigator.mediaDevices?.getUserMedia) {
+        setCameraError("This browser cannot access the camera. Use manual token entry on this device.");
+        return;
       }
-      setCameraActive(true);
-      scanningRef.current = true;
-      const detector = new window.BarcodeDetector({ formats: ["qr_code"] });
-      const scan = async () => {
-        if (!scanningRef.current || !videoRef.current) return;
-        try {
-          const codes = await detector.detect(videoRef.current);
-          const value = codes[0]?.rawValue;
-          if (value) {
-            scanningRef.current = false;
-            await submit(value);
+      if (!videoRef.current) return;
+
+      const reader = new BrowserQRCodeReader();
+      const devices = await BrowserQRCodeReader.listVideoInputDevices();
+      const rearCamera =
+        devices.find((device) => /back|rear|environment/i.test(device.label)) ??
+        devices[devices.length - 1] ??
+        devices[0];
+
+      const controls = await reader.decodeFromVideoDevice(
+        rearCamera?.deviceId,
+        videoRef.current,
+        (scanResult) => {
+          const value = scanResult?.getText().trim();
+          if (!value || value === lastScanRef.current || busy) return;
+          lastScanRef.current = value;
+          void submit(value).finally(() => {
             window.setTimeout(() => {
-              scanningRef.current = true;
-              scan();
-            }, 1200);
-            return;
-          }
-        } catch (e) {
-          setCameraError(e instanceof Error ? e.message : "Camera scanning failed.");
-        }
-        window.setTimeout(scan, 350);
-      };
-      scan();
+              lastScanRef.current = "";
+            }, 1500);
+          });
+        },
+      );
+      scannerControlsRef.current = controls;
+      streamRef.current = videoRef.current.srcObject as MediaStream | null;
+      setCameraActive(true);
     } catch (e) {
       setCameraError(e instanceof Error ? e.message : "Could not access camera.");
       stopCamera();

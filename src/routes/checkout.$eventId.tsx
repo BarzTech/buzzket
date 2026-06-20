@@ -94,6 +94,21 @@ function Checkout() {
 
   const pay = async () => {
     if (!reservationId) return;
+    if (!contact.name.trim()) {
+      setPayError("Enter the ticket holder's name.");
+      setStep(2);
+      return;
+    }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(contact.email.trim())) {
+      setPayError("Enter a valid email address so we can send the tickets.");
+      setStep(2);
+      return;
+    }
+    if (contact.phone.replace(/\D/g, "").length < 9) {
+      setPayError("Enter a valid phone number for payment updates.");
+      setStep(2);
+      return;
+    }
     setPaying(true);
     setPayError(null);
     try {
@@ -101,9 +116,9 @@ function Checkout() {
         reservationId,
         qty: String(qty),
         unitPrice: String(unitPrice),
-        contactName: contact.name || "Guest",
-        contactEmail: contact.email,
-        contactPhone: contact.phone,
+        contactName: contact.name.trim(),
+        contactEmail: contact.email.trim(),
+        contactPhone: contact.phone.trim(),
       });
       const callbackUrl = `${window.location.origin}/checkout/status?${callbackParams.toString()}`;
 
@@ -111,10 +126,12 @@ function Checkout() {
         data: {
           reservationId,
           amount: total,
-          email: contact.email,
-          phone: contact.phone,
-          name: contact.name || "Guest",
+          email: contact.email.trim(),
+          phone: contact.phone.trim(),
+          name: contact.name.trim(),
           callbackUrl,
+          qty,
+          unitPrice,
         },
       });
 
@@ -259,9 +276,25 @@ function Checkout() {
                     <Input id="phone" value={contact.phone} onChange={(e) => setContact((c) => ({ ...c, phone: e.target.value }))} placeholder="+256 7XX XXX XXX" />
                   </div>
                 </div>
+                {payError && (
+                  <div className="flex items-center gap-2 rounded-lg bg-destructive/10 p-3 text-sm text-destructive">
+                    <AlertCircle className="h-4 w-4" /> {payError}
+                  </div>
+                )}
                 <div className="flex gap-3">
                   <Button variant="outline" onClick={() => setStep(1)} className="flex-1">Back</Button>
-                  <Button onClick={() => setStep(3)} className="flex-1 bg-cta text-cta-foreground hover:bg-cta/90 font-semibold">Continue</Button>
+                  <Button
+                    onClick={() => {
+                      if (!contact.name.trim()) return setPayError("Enter the ticket holder's name.");
+                      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(contact.email.trim())) return setPayError("Enter a valid email address so we can send the tickets.");
+                      if (contact.phone.replace(/\D/g, "").length < 9) return setPayError("Enter a valid phone number for payment updates.");
+                      setPayError(null);
+                      setStep(3);
+                    }}
+                    className="flex-1 bg-cta text-cta-foreground hover:bg-cta/90 font-semibold"
+                  >
+                    Continue
+                  </Button>
                 </div>
               </div>
             )}

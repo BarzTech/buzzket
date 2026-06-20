@@ -1,5 +1,6 @@
 import "./lib/error-capture";
 
+import { verifyPesapalPaymentBackground } from "./lib/data/tickets";
 import { consumeLastCapturedError } from "./lib/error-capture";
 import { renderErrorPage } from "./lib/error-page";
 
@@ -47,6 +48,17 @@ export default {
         const notificationType = url.searchParams.get("OrderNotificationType") || "";
 
         console.log("Pesapal IPN notification received:", { orderTrackingId, merchantReference, notificationType });
+
+        if (orderTrackingId && merchantReference) {
+          // Trigger the background payment verification and confirmation
+          void verifyPesapalPaymentBackground(orderTrackingId, merchantReference)
+            .then((res) => {
+              console.log("Background Pesapal IPN confirmation success:", res);
+            })
+            .catch((err) => {
+              console.error("Background Pesapal IPN confirmation error:", err);
+            });
+        }
 
         // Acknowledge the notification back to Pesapal as required by the v3 API
         return new Response(

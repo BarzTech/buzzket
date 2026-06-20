@@ -13,6 +13,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 function safeRedirect(value: unknown): string {
   if (typeof value !== "string") return "/admin";
   if (!value.startsWith("/") || value.startsWith("//")) return "/admin";
+  if (value.startsWith("/login") || value.startsWith("/admin/login") || value.length > 200) return "/admin";
   return value;
 }
 
@@ -36,21 +37,33 @@ function AdminLogin() {
   const submit = async () => {
     setBusy(true);
     setError(null);
-    const { error } = await auth.signInWithEmail(email, password);
-    setBusy(false);
-    if (error) {
-      setError(error);
-      return;
+    try {
+      const { error } = await auth.signInWithEmail(email, password);
+      if (error) {
+        setError(error);
+        return;
+      }
+      const supabase = getSupabaseBrowserClient();
+      const { data } = supabase ? await supabase.auth.getUser() : { data: { user: null } };
+      const role = data.user?.user_metadata?.role;
+      if (role !== "admin") {
+        await auth.signOut();
+        setError("This account is not authorised for the admin console.");
+        return;
+      }
+      navigate({ to: redirect });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Admin sign-in failed. Check your connection and try again.");
+    } finally {
+      setBusy(false);
     }
-    const supabase = getSupabaseBrowserClient();
-    const { data } = supabase ? await supabase.auth.getUser() : { data: { user: null } };
-    const role = data.user?.user_metadata?.role;
-    if (role !== "admin") {
-      await auth.signOut();
-      setError("This account is not authorised for the admin console.");
-      return;
+  };
+
+  const onSubmit = (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!busy && email && password) {
+      void submit();
     }
-    navigate({ to: redirect });
   };
 
   return (
@@ -84,23 +97,23 @@ function AdminLogin() {
           </Alert>
         )}
 
-        <div className="mt-6 space-y-4">
+        <form className="mt-6 space-y-4" onSubmit={onSubmit}>
           <div>
             <Label htmlFor="admin-email">Admin email</Label>
-            <Input id="admin-email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} />
+            <Input id="admin-email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="username" disabled={busy} />
           </div>
           <div>
             <Label htmlFor="admin-password">Password</Label>
-            <Input id="admin-password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} />
+            <Input id="admin-password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="current-password" disabled={busy} />
           </div>
           <Button
-            onClick={submit}
+            type="submit"
             disabled={busy || !email || !password}
             className="w-full bg-cta text-cta-foreground hover:bg-cta/90 font-semibold"
           >
             {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : "Sign in to admin"}
           </Button>
-        </div>
+        </form>
       </Card>
     </div>
   );

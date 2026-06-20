@@ -1,4 +1,5 @@
 import { createServerFn } from "@tanstack/react-start";
+import { z } from "zod";
 import { getSupabaseAdmin } from "../supabase/server";
 
 export type PayoutStatus = "pending" | "approved" | "rejected" | "paid";
@@ -62,9 +63,25 @@ export type AdminStats = {
   totalOrders: number;
 };
 
-export const getAdminPayouts = createServerFn({ method: "GET" }).handler(async (): Promise<Payout[]> => {
+const adminRequestSchema = z.object({ accessToken: z.string().min(1) });
+
+async function requireAdmin(accessToken: string) {
   const supabase = getSupabaseAdmin();
   if (!supabase) throw new Error("Supabase is not configured.");
+
+  const { data, error } = await supabase.auth.getUser(accessToken);
+  if (error || !data.user) throw new Error("Admin session is invalid.");
+  if (data.user.user_metadata?.role !== "admin") {
+    throw new Error("This account is not authorised for the admin console.");
+  }
+
+  return supabase;
+}
+
+export const getAdminPayouts = createServerFn({ method: "POST" })
+  .validator(adminRequestSchema)
+  .handler(async ({ data: request }): Promise<Payout[]> => {
+  const supabase = await requireAdmin(request.accessToken);
 
   // Get all events.
   const { data: events, error: eventsError } = await supabase
@@ -110,8 +127,8 @@ export const getAdminPayouts = createServerFn({ method: "GET" }).handler(async (
     });
   }
 
-  return payouts;
-});
+    return payouts;
+  });
 
 export function saveAdminPayouts(payouts: Payout[]): void {
   if (typeof window === "undefined") return;
@@ -122,9 +139,10 @@ export function saveAdminPayouts(payouts: Payout[]): void {
   window.localStorage.setItem("bzk-payout-status", JSON.stringify(statusMap));
 }
 
-export const getAdminOrganizers = createServerFn({ method: "GET" }).handler(async (): Promise<OrganizerRow[]> => {
-  const supabase = getSupabaseAdmin();
-  if (!supabase) throw new Error("Supabase is not configured.");
+export const getAdminOrganizers = createServerFn({ method: "POST" })
+  .validator(adminRequestSchema)
+  .handler(async ({ data: request }): Promise<OrganizerRow[]> => {
+  const supabase = await requireAdmin(request.accessToken);
 
   // Get all events.
   const { data: events, error: eventsError } = await supabase
@@ -218,12 +236,13 @@ export const getAdminOrganizers = createServerFn({ method: "GET" }).handler(asyn
     }
   }
 
-  return Array.from(orgMap.values());
-});
+    return Array.from(orgMap.values());
+  });
 
-export const getAdminOrders = createServerFn({ method: "GET" }).handler(async (): Promise<PlatformOrder[]> => {
-  const supabase = getSupabaseAdmin();
-  if (!supabase) throw new Error("Supabase is not configured.");
+export const getAdminOrders = createServerFn({ method: "POST" })
+  .validator(adminRequestSchema)
+  .handler(async ({ data: request }): Promise<PlatformOrder[]> => {
+  const supabase = await requireAdmin(request.accessToken);
 
   const { data, error } = await supabase
     .from("orders")
@@ -282,8 +301,8 @@ export const getAdminOrders = createServerFn({ method: "GET" }).handler(async ()
       status: (row.status === "paid" ? "confirmed" : "cancelled") as "confirmed" | "refunded" | "cancelled",
       purchasedAt: row.created_at,
     };
+    });
   });
-});
 
 export function computeAdminStats(payouts: Payout[], orders: PlatformOrder[]): AdminStats {
   const confirmedOrders = orders.filter((o) => o.status === "confirmed");
