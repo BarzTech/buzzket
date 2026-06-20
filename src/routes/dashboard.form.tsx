@@ -6,6 +6,7 @@ import { z } from "zod";
 
 import { requireRoleOrRedirect } from "@/lib/auth/guard";
 import { getStoredUser } from "@/lib/auth/session";
+import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import { eventQueryOptions, upsertEvent } from "@/lib/data/events";
 import { CATEGORIES } from "@/lib/format";
 import { Navbar } from "@/components/navbar";
@@ -93,6 +94,54 @@ function EventForm() {
   
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+
+  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!file.type.startsWith("image/")) {
+      setUploadError("Please upload an image file.");
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      setUploadError("Image size must be less than 5MB.");
+      return;
+    }
+
+    setUploading(true);
+    setUploadError(null);
+    try {
+      const supabase = getSupabaseBrowserClient();
+      if (!supabase) {
+        throw new Error("Supabase is not configured.");
+      }
+
+      const fileExt = file.name.split(".").pop();
+      const fileName = `${Math.random().toString(36).substring(2)}_${Date.now()}.${fileExt}`;
+      const filePath = `events/${fileName}`;
+
+      const { error } = await supabase.storage
+        .from("event-images")
+        .upload(filePath, file, {
+          cacheControl: "3600",
+          upsert: false,
+        });
+
+      if (error) throw error;
+
+      const { data: { publicUrl } } = supabase.storage
+        .from("event-images")
+        .getPublicUrl(filePath);
+
+      form.setValue("image", publicUrl, { shouldDirty: true, shouldValidate: true });
+    } catch (err) {
+      setUploadError(err instanceof Error ? err.message : "Failed to upload image.");
+    } finally {
+      setUploading(false);
+    }
+  };
 
   const onSubmit = async (values: EventFormValues) => {
     setIsSubmitting(true);
@@ -203,20 +252,48 @@ function EventForm() {
                 />
               </div>
               
-              <FormField
-                control={form.control}
-                name="image"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Image URL</FormLabel>
-                    <FormControl>
-                      <Input placeholder="https://your-image-url.com/image.png" {...field} />
-                    </FormControl>
-                    <FormDescription>Link to a cover image for your event.</FormDescription>
-                    <FormMessage />
-                  </FormItem>
+              <div className="space-y-4 rounded-xl border p-4 bg-muted/10">
+                <FormLabel className="text-base">Event Cover Image</FormLabel>
+                <div className="grid gap-4 md:grid-cols-2">
+                  <div className="space-y-2">
+                    <FormLabel htmlFor="image-file" className="text-xs">Upload Cover Image</FormLabel>
+                    <Input
+                      id="image-file"
+                      type="file"
+                      accept="image/*"
+                      onChange={handleImageUpload}
+                      disabled={uploading || isSubmitting}
+                      className="cursor-pointer"
+                    />
+                    {uploading && (
+                      <div className="flex items-center gap-1.5 text-xs text-muted-foreground mt-1">
+                        <Loader2 className="h-3 w-3 animate-spin text-primary" /> Uploading image...
+                      </div>
+                    )}
+                    {uploadError && (
+                      <p className="text-xs font-medium text-destructive mt-1">{uploadError}</p>
+                    )}
+                  </div>
+                  <FormField
+                    control={form.control}
+                    name="image"
+                    render={({ field }) => (
+                      <FormItem className="space-y-2">
+                        <FormLabel className="text-xs">Or Enter Image URL</FormLabel>
+                        <FormControl>
+                          <Input placeholder="https://your-image-url.com/image.png" {...field} disabled={uploading || isSubmitting} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </div>
+                {form.watch("image") && (
+                  <div className="relative aspect-video w-full max-w-sm overflow-hidden rounded-lg border">
+                    <img src={form.watch("image")} alt="Preview" className="h-full w-full object-cover" />
+                  </div>
                 )}
-              />
+              </div>
 
               <FormField
                 control={form.control}
