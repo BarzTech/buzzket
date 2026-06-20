@@ -131,6 +131,10 @@ export type Database = {
           status: ReservationStatus;
           expires_at: string;
           created_at: string;
+          contact_name: string | null;
+          contact_email: string | null;
+          contact_phone: string | null;
+          unit_price: number | null;
         };
         Insert: Partial<Database["public"]["Tables"]["reservations"]["Row"]>;
         Update: Partial<Database["public"]["Tables"]["reservations"]["Row"]>;
@@ -207,7 +211,9 @@ export type Database = {
         }[];
       };
       dashboard_stats: {
-        Args: Record<string, never>;
+        Args: {
+          p_organizer_id?: string | null;
+        };
         Returns: {
           total_sales: number;
           tickets_sold: number;

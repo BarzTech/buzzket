@@ -38,8 +38,8 @@ export function getSupabaseAdmin(): SupabaseClient<Database> | null {
 
   const client = createClient<Database>(url, serviceRoleKey, {
     auth: { persistSession: false, autoRefreshToken: false },
-    realtime: { transport: ws },
-  });
+    realtime: { transport: ws as any },
+  }) as unknown as SupabaseClient<Database>;
   cached = { key, client };
   return client;
 }
