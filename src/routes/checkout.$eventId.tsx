@@ -50,7 +50,7 @@ function Checkout() {
 
   const [paying, setPaying] = useState(false);
   const [payError, setPayError] = useState<string | null>(null);
-  const qrTokens: string[] | null = null;
+  const qrTokens = null as string[] | null;
 
   // Reserve inventory as soon as we have a valid tier. Depend on the stable
   // tier id (not the object) so react-query refetches don't spawn duplicate

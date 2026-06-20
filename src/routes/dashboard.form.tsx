@@ -32,6 +32,7 @@ const eventFormSchema = z.object({
   tiers: z
     .array(
       z.object({
+        id: z.string().optional(),
         name: z.string().min(2, "Tier name is required"),
         price: z.coerce.number().int().nonnegative("Price must be a positive number"),
         quantity_total: z.coerce.number().int().positive("Quantity must be a positive number"),
@@ -152,7 +153,7 @@ function EventForm() {
       const user = getStoredUser();
       const payload = {
         ...values,
-        organizerId: values.id ? event?.organizerId : user?.id,
+        organizerId: (values.id ? event?.organizerId : user?.id) ?? undefined,
       };
       await upsertEvent({ data: payload });
       navigate({ to: "/dashboard" });

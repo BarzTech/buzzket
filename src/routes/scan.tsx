@@ -136,7 +136,7 @@ function Scan() {
             />
           </div>
           <Button
-            onClick={submit}
+            onClick={() => submit()}
             disabled={busy || !token.trim()}
             className="w-full bg-cta text-cta-foreground hover:bg-cta/90 font-semibold"
           >
