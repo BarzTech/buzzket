@@ -3,11 +3,12 @@ import { useState } from "react";
 import { Building2, Loader2, Ticket } from "lucide-react";
 
 import { useAuth } from "@/lib/auth/context";
+import { getStoredUser } from "@/lib/auth/session";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card } from "@/components/ui/card";
-import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 
 export const Route = createFileRoute("/organizer/register")({
   head: () => ({ meta: [{ title: "Organiser Registration - Buzzket" }] }),
@@ -22,17 +23,29 @@ function OrganizerRegister() {
   const [name, setName] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
 
   const submit = async () => {
     setBusy(true);
     setError(null);
-    const { error } = await auth.signUpWithEmail(email, password, "organizer");
-    setBusy(false);
-    if (error) {
-      setError(error);
-      return;
+    setSuccess(null);
+    try {
+      const { error } = await auth.signUpWithEmail(email, password, "organizer");
+      if (error) {
+        setError(error);
+        return;
+      }
+      const user = getStoredUser();
+      if (!user) {
+        setSuccess("Registration successful! Please check your inbox and verify your email to activate your organizer account.");
+        return;
+      }
+      navigate({ to: "/dashboard" });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "An unexpected error occurred during registration.");
+    } finally {
+      setBusy(false);
     }
-    navigate({ to: "/dashboard" });
   };
 
   return (
@@ -66,22 +79,28 @@ function OrganizerRegister() {
           </Alert>
         )}
 
+        {success && (
+          <Alert variant="default" className="mt-4 border-green-500 bg-green-500/10 text-green-700 dark:text-green-400">
+            <AlertDescription>{success}</AlertDescription>
+          </Alert>
+        )}
+
         <div className="mt-6 space-y-4">
           <div>
             <Label htmlFor="organizer-name">Organiser name</Label>
-            <Input id="organizer-name" value={name} onChange={(e) => setName(e.target.value)} />
+            <Input id="organizer-name" value={name} onChange={(e) => setName(e.target.value)} disabled={busy || !!success} />
           </div>
           <div>
             <Label htmlFor="organizer-email">Email</Label>
-            <Input id="organizer-email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} />
+            <Input id="organizer-email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} disabled={busy || !!success} />
           </div>
           <div>
             <Label htmlFor="organizer-password">Password</Label>
-            <Input id="organizer-password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} />
+            <Input id="organizer-password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} disabled={busy || !!success} />
           </div>
           <Button
             onClick={submit}
-            disabled={busy || !name || !email || !password}
+            disabled={busy || !!success || !name || !email || !password}
             className="w-full bg-cta text-cta-foreground hover:bg-cta/90 font-semibold"
           >
             {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : "Create organiser account"}
