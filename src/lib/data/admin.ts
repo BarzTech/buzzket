@@ -83,7 +83,7 @@ export const getAdminPayouts = createServerFn({ method: "POST" })
   .handler(async ({ data: request }): Promise<Payout[]> => {
     const supabase = await requireAdmin(request.accessToken);
 
-    const { data: payouts, error } = await supabase
+    const { data: payouts, error: payoutsError } = await supabase
       .from("payout_requests")
       .select(`
         id,
@@ -94,24 +94,36 @@ export const getAdminPayouts = createServerFn({ method: "POST" })
         payment_account,
         note,
         requested_at,
-        resolved_at,
-        organizer_profiles (
-          display_name,
-          user_id
-        )
+        resolved_at
       `)
       .order("requested_at", { ascending: false });
 
-    if (error) throw new Error(error.message);
+    if (payoutsError) throw new Error(payoutsError.message);
+
+    const organizerIds = Array.from(new Set((payouts ?? []).map(p => p.organizer_id)));
+    
+    let profiles: Record<string, string> = {};
+    if (organizerIds.length > 0) {
+      const { data: profilesData, error: profilesError } = await supabase
+        .from("organizer_profiles")
+        .select("user_id, display_name")
+        .in("user_id", organizerIds);
+        
+      if (!profilesError && profilesData) {
+        profiles = profilesData.reduce((acc, p) => {
+          acc[p.user_id] = p.display_name;
+          return acc;
+        }, {} as Record<string, string>);
+      }
+    }
 
     return (payouts ?? []).map((row) => {
-      const profile = row.organizer_profiles as unknown as { display_name: string } | null;
       return {
         id: row.id,
         organizerId: row.organizer_id,
-        organizerName: profile?.display_name || "Organizer",
+        organizerName: profiles[row.organizer_id] || "Organizer",
         organizerEmail: "organizer@buzzket.com", // Keeping this hardcoded as per original
-        eventTitle: "Wallet Payout", // Replaced eventTitle since payouts are per wallet
+        eventTitle: "Wallet Payout",
         grossAmount: row.amount,
         platformFee: 0,
         netAmount: row.amount,
