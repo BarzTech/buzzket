@@ -9,7 +9,7 @@ import { Card } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Calendar, MapPin, Clock, Ticket, Share2, MapPin as MapIcon, AlertCircle } from "lucide-react";
+import { Calendar, MapPin, Clock, Ticket, Share2, AlertCircle } from "lucide-react";
 import { useState, useEffect } from "react";
 
 export const Route = createFileRoute("/events/$eventId")({
@@ -140,14 +140,18 @@ function EventDetail() {
 
             <Separator className="my-6" />
 
-            {/* Location Map Placeholder */}
+            {/* Location Map Embed */}
             <h3 className="text-lg font-semibold">Location</h3>
-            <div className="mt-3 grid h-56 place-items-center rounded-xl bg-secondary text-muted-foreground ring-1 ring-border">
-              <div className="text-center">
-                <MapIcon className="mx-auto mb-2 h-8 w-8 text-primary/60" />
-                <p className="text-sm">{event.venue}, {event.city}</p>
-                <p className="text-xs opacity-70">Google Maps embed placeholder</p>
-              </div>
+            <div className="mt-3 overflow-hidden rounded-xl bg-secondary ring-1 ring-border h-56">
+              <iframe
+                title="Google Maps Location"
+                width="100%"
+                height="100%"
+                style={{ border: 0 }}
+                loading="lazy"
+                allowFullScreen
+                src={`https://maps.google.com/maps?q=${encodeURIComponent(`${event.venue}, ${event.city}`)}&t=&z=15&ie=UTF8&iwloc=&output=embed`}
+              />
             </div>
           </div>
 
