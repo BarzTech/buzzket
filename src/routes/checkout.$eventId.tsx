@@ -37,7 +37,6 @@ function Checkout() {
     event?.tiers?.[0] ??
     null;
   const unitPrice = tier?.price ?? event?.priceFrom ?? 0;
-  const { subtotal, fees, total } = calcOrder(unitPrice, qty);
 
   const [step, setStep] = useState(1);
   const [contact, setContact] = useState({ name: "", email: "", phone: "" });
