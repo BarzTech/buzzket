@@ -95,6 +95,7 @@ function EventDetail() {
   const total = unitPrice * qty;
   const maxQty = Math.min(10, tier?.available ?? 10);
   const soldOut = (tier?.available ?? 0) <= 0;
+  const isPastEvent = new Date(event.date) < new Date();
 
   return (
     <div className="min-h-screen">
@@ -110,9 +111,16 @@ function EventDetail() {
         <div className="mt-6 grid gap-8 md:grid-cols-[1fr_340px]">
           {/* Left column */}
           <div>
-            <span className="inline-block rounded-full bg-primary/10 px-3 py-1 text-xs font-semibold text-primary">
-              {event.category}
-            </span>
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="inline-block rounded-full bg-primary/10 px-3 py-1 text-xs font-semibold text-primary">
+                {event.category}
+              </span>
+              {isPastEvent && (
+                <span className="inline-block rounded-full bg-secondary px-3 py-1 text-xs font-semibold text-muted-foreground border">
+                  Archived
+                </span>
+              )}
+            </div>
             <h1 className="mt-3 text-3xl font-bold leading-tight md:text-4xl">{event.title}</h1>
 
             <div className="mt-5 space-y-3 text-sm text-muted-foreground">
@@ -211,11 +219,13 @@ function EventDetail() {
                 </div>
 
                 <Button
-                  asChild={!soldOut && !!tier}
-                  disabled={soldOut || !tier}
+                  asChild={!soldOut && !!tier && !isPastEvent}
+                  disabled={soldOut || !tier || isPastEvent}
                   className="w-full bg-cta text-cta-foreground hover:bg-cta/90 font-semibold"
                 >
-                  {soldOut || !tier ? (
+                  {isPastEvent ? (
+                    <span><AlertCircle className="mr-2 h-4 w-4 inline" /> Event has passed</span>
+                  ) : soldOut || !tier ? (
                     <span><Ticket className="mr-2 h-4 w-4 inline" /> Sold Out</span>
                   ) : (
                     <Link

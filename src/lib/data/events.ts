@@ -111,6 +111,9 @@ export const eventsQueryOptions = (organizerId?: string) =>
       );
       if (organizerId) {
         query = query.eq("organizer_id", organizerId);
+      } else {
+        const today = new Date().toISOString();
+        query = query.gte("date", today);
       }
       const { data, error } = await query;
       if (error) throw new Error(error.message);

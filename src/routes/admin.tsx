@@ -33,14 +33,18 @@ import { formatUGX } from "@/lib/format";
 import {
   getAdminPayouts,
   saveAdminPayouts,
+  updateAdminPayout,
   getAdminOrganizers,
   getAdminOrders,
+  getAdminEvents,
+  deleteAdminEvent,
   computeAdminStats,
   type Payout,
   type PayoutStatus,
   type OrganizerRow,
   type PlatformOrder,
   type AdminStats,
+  type AdminEvent,
 } from "@/lib/data/admin";
 import {
   getCommissionSettings,
@@ -135,10 +139,11 @@ function StatCard({
 
 // ─── Tab types ─────────────────────────────────────────────────────────────────
 
-type Tab = "overview" | "payouts" | "organizers" | "orders" | "promos" | "settings";
+type Tab = "overview" | "events" | "payouts" | "organizers" | "orders" | "promos" | "settings";
 
 const TABS: { id: Tab; label: string; icon: React.ReactNode }[] = [
   { id: "overview", label: "Overview", icon: <LayoutDashboard className="h-4 w-4" /> },
+  { id: "events", label: "Events", icon: <CalendarCheck className="h-4 w-4" /> },
   { id: "payouts", label: "Payouts", icon: <Banknote className="h-4 w-4" /> },
   { id: "organizers", label: "Organizers", icon: <Users className="h-4 w-4" /> },
   { id: "orders", label: "Orders", icon: <ShoppingBag className="h-4 w-4" /> },
@@ -760,6 +765,67 @@ function PromoCodesSection() {
   );
 }
 
+// ─── Section: Events ───────────────────────────────────────────────────────────
+
+function EventsSection({ events, onDeleteEvent }: { events: AdminEvent[], onDeleteEvent: (id: string) => void }) {
+  return (
+    <div className="space-y-6">
+      <div>
+        <h2 className="text-xl font-bold mb-0.5">Platform Events</h2>
+        <p className="text-sm text-muted-foreground">Manage all events listed on the platform.</p>
+      </div>
+      <div className="overflow-x-auto rounded-2xl border border-white/10">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="border-b border-white/10 bg-white/5 text-xs text-muted-foreground uppercase tracking-wide">
+              <th className="px-4 py-3 text-left">Event</th>
+              <th className="px-4 py-3 text-left">Organiser</th>
+              <th className="px-4 py-3 text-left">Date</th>
+              <th className="px-4 py-3 text-left">Created At</th>
+              <th className="px-4 py-3 text-right">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {events.map((e, i) => (
+              <tr
+                key={e.id}
+                className={`border-b border-white/5 transition-colors hover:bg-white/5 ${
+                  i % 2 === 0 ? "bg-transparent" : "bg-white/2"
+                }`}
+              >
+                <td className="px-4 py-3 font-medium">{e.title}</td>
+                <td className="px-4 py-3 text-muted-foreground">{e.organizerName}</td>
+                <td className="px-4 py-3 text-muted-foreground">{new Date(e.date).toLocaleDateString()}</td>
+                <td className="px-4 py-3 text-muted-foreground">{new Date(e.createdAt).toLocaleDateString()}</td>
+                <td className="px-4 py-3 text-right">
+                  <button
+                    onClick={() => {
+                      if (confirm("Are you sure you want to delete this event? This action cannot be undone.")) {
+                        onDeleteEvent(e.id);
+                      }
+                    }}
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-1.5 text-xs font-medium text-red-400 hover:bg-red-500/20 transition-colors"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                    Delete
+                  </button>
+                </td>
+              </tr>
+            ))}
+            {events.length === 0 && (
+              <tr>
+                <td colSpan={5} className="px-4 py-8 text-center text-muted-foreground">
+                  No events found.
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
 // ─── Section: Settings ─────────────────────────────────────────────────────────
 
 function SettingsSection() {
@@ -946,6 +1012,7 @@ function AdminPage() {
   const [payouts, setPayouts] = useState<Payout[]>([]);
   const [organizers, setOrganizers] = useState<OrganizerRow[]>([]);
   const [orders, setOrders] = useState<PlatformOrder[]>([]);
+  const [adminEvents, setAdminEvents] = useState<AdminEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
 
@@ -960,11 +1027,12 @@ function AdminPage() {
         getAdminPayouts({ data: { accessToken } }),
         getAdminOrganizers({ data: { accessToken } }),
         getAdminOrders({ data: { accessToken } }),
+        getAdminEvents({ data: { accessToken } }),
       ]);
     };
 
     load()
-      .then(([payoutsRes, organizersRes, ordersRes]) => {
+      .then(([payoutsRes, organizersRes, ordersRes, eventsRes]) => {
         let mergedPayouts = payoutsRes;
         if (typeof window !== "undefined") {
           const raw = window.localStorage.getItem("bzk-payout-status");
@@ -984,6 +1052,7 @@ function AdminPage() {
         setPayouts(mergedPayouts);
         setOrganizers(organizersRes);
         setOrders(ordersRes);
+        setAdminEvents(eventsRes);
       })
       .catch((err) => {
         console.error("Failed to load admin data", err);
@@ -995,16 +1064,45 @@ function AdminPage() {
   const stats: AdminStats = computeAdminStats(payouts, orders);
 
   const handleUpdatePayoutStatus = useCallback(
-    (id: string, status: PayoutStatus) => {
-      const updated = payouts.map((p) =>
-        p.id === id
-          ? { ...p, status, resolvedAt: status !== "pending" ? new Date().toISOString() : null }
-          : p,
-      );
-      setPayouts(updated);
-      saveAdminPayouts(updated);
+    async (id: string, status: PayoutStatus) => {
+      try {
+        const supabase = getSupabaseBrowserClient();
+        const { data } = supabase ? await supabase.auth.getSession() : { data: { session: null } };
+        const accessToken = data.session?.access_token;
+        if (!accessToken) throw new Error("Admin session missing.");
+
+        await updateAdminPayout({ data: { accessToken, payoutId: id, status } });
+        setPayouts((prev) =>
+          prev.map((p) =>
+            p.id === id
+              ? { ...p, status, resolvedAt: status !== "pending" ? new Date().toISOString() : null }
+              : p,
+          )
+        );
+      } catch (err) {
+        console.error("Failed to update payout", err);
+        alert("Failed to update payout status.");
+      }
     },
-    [payouts],
+    [],
+  );
+
+  const handleDeleteEvent = useCallback(
+    async (id: string) => {
+      try {
+        const supabase = getSupabaseBrowserClient();
+        const { data } = supabase ? await supabase.auth.getSession() : { data: { session: null } };
+        const accessToken = data.session?.access_token;
+        if (!accessToken) throw new Error("Admin session missing.");
+
+        await deleteAdminEvent({ data: { accessToken, eventId: id } });
+        setAdminEvents((prev) => prev.filter((e) => e.id !== id));
+      } catch (err) {
+        console.error("Failed to delete event", err);
+        alert("Failed to delete event.");
+      }
+    },
+    [],
   );
 
   const pendingCount = payouts.filter((p) => p.status === "pending").length;
@@ -1086,6 +1184,9 @@ function AdminPage() {
           <main className="flex-1 min-w-0">
             {activeTab === "overview" && (
               <OverviewSection stats={stats} payouts={payouts} />
+            )}
+            {activeTab === "events" && (
+              <EventsSection events={adminEvents} onDeleteEvent={handleDeleteEvent} />
             )}
             {activeTab === "payouts" && (
               <PayoutsSection payouts={payouts} onUpdateStatus={handleUpdatePayoutStatus} />

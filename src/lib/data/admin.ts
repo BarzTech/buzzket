@@ -81,62 +81,112 @@ async function requireAdmin(accessToken: string) {
 export const getAdminPayouts = createServerFn({ method: "POST" })
   .validator(adminRequestSchema)
   .handler(async ({ data: request }): Promise<Payout[]> => {
-  const supabase = await requireAdmin(request.accessToken);
+    const supabase = await requireAdmin(request.accessToken);
 
-  // Get all events.
-  const { data: events, error: eventsError } = await supabase
-    .from("events")
-    .select("id, title, organizer_id, organizer_name, created_at");
-  if (eventsError) throw new Error(eventsError.message);
+    const { data: payouts, error } = await supabase
+      .from("payout_requests")
+      .select(`
+        id,
+        organizer_id,
+        amount,
+        status,
+        payment_method,
+        payment_account,
+        note,
+        requested_at,
+        resolved_at,
+        organizer_profiles (
+          display_name,
+          user_id
+        )
+      `)
+      .order("requested_at", { ascending: false });
 
-  // Get all orders.
-  const { data: orders, error: ordersError } = await supabase
-    .from("orders")
-    .select("id, event_id, status, total, fees, subtotal, payment_method, created_at");
-  if (ordersError) throw new Error(ordersError.message);
+    if (error) throw new Error(error.message);
 
-  const payouts: Payout[] = [];
-
-  for (const event of events ?? []) {
-    const eventOrders = (orders ?? []).filter((o) => o.event_id === event.id && o.status === "paid");
-    if (eventOrders.length === 0) continue;
-
-    const grossAmount = eventOrders.reduce((s, o) => s + o.total, 0);
-    const platformFee = eventOrders.reduce((s, o) => s + o.fees, 0);
-    const netAmount = eventOrders.reduce((s, o) => s + o.subtotal, 0);
-    const ticketsSold = eventOrders.length; 
-
-    const lastOrder = eventOrders[eventOrders.length - 1];
-    const paymentMethod = lastOrder?.payment_method || "MTN Mobile Money";
-
-    payouts.push({
-      id: `${event.id}-payout`,
-      organizerId: event.organizer_id || "unknown",
-      organizerName: event.organizer_name || "Organizer",
-      organizerEmail: "organizer@buzzket.com",
-      eventTitle: event.title,
-      grossAmount,
-      platformFee,
-      netAmount,
-      ticketsSold,
-      status: "pending",
-      requestedAt: event.created_at,
-      resolvedAt: null,
-      paymentMethod: paymentMethod === "card" ? "Bank Transfer" : paymentMethod === "airtel" ? "Airtel Money" : "MTN Mobile Money",
-      paymentAccount: "+256 700 000 000",
+    return (payouts ?? []).map((row) => {
+      const profile = row.organizer_profiles as unknown as { display_name: string } | null;
+      return {
+        id: row.id,
+        organizerId: row.organizer_id,
+        organizerName: profile?.display_name || "Organizer",
+        organizerEmail: "organizer@buzzket.com", // Keeping this hardcoded as per original
+        eventTitle: "Wallet Payout", // Replaced eventTitle since payouts are per wallet
+        grossAmount: row.amount,
+        platformFee: 0,
+        netAmount: row.amount,
+        ticketsSold: 0,
+        status: row.status as PayoutStatus,
+        requestedAt: row.requested_at,
+        resolvedAt: row.resolved_at,
+        paymentMethod: row.payment_method,
+        paymentAccount: row.payment_account,
+      };
     });
-  }
+  });
 
-    return payouts;
+export const updateAdminPayout = createServerFn({ method: "POST" })
+  .validator(
+    adminRequestSchema.extend({
+      payoutId: z.string().min(1),
+      status: z.enum(["pending", "approved", "rejected", "paid"]),
+    })
+  )
+  .handler(async ({ data: request }) => {
+    const supabase = await requireAdmin(request.accessToken);
+
+    const { error } = await supabase
+      .from("payout_requests")
+      .update({
+        status: request.status,
+        resolved_at: request.status !== "pending" ? new Date().toISOString() : null,
+      })
+      .eq("id", request.payoutId);
+
+    if (error) throw new Error(error.message);
+
+    return { ok: true };
+  });
+
+export const deleteAdminEvent = createServerFn({ method: "POST" })
+  .validator(adminRequestSchema.extend({ eventId: z.string().min(1) }))
+  .handler(async ({ data: request }) => {
+    const supabase = await requireAdmin(request.accessToken);
+    const { error } = await supabase.from("events").delete().eq("id", request.eventId);
+    if (error) throw new Error(error.message);
+    return { ok: true };
+  });
+
+export type AdminEvent = {
+  id: string;
+  title: string;
+  organizerName: string;
+  date: string;
+  createdAt: string;
+};
+
+export const getAdminEvents = createServerFn({ method: "POST" })
+  .validator(adminRequestSchema)
+  .handler(async ({ data: request }): Promise<AdminEvent[]> => {
+    const supabase = await requireAdmin(request.accessToken);
+    const { data, error } = await supabase
+      .from("events")
+      .select("id, title, organizer_name, date, created_at")
+      .order("created_at", { ascending: false });
+    if (error) throw new Error(error.message);
+    return (data ?? []).map((row) => ({
+      id: row.id,
+      title: row.title,
+      organizerName: row.organizer_name || "Unknown",
+      date: row.date,
+      createdAt: row.created_at,
+    }));
   });
 
 export function saveAdminPayouts(payouts: Payout[]): void {
+  // We no longer need local storage since we write to the database
   if (typeof window === "undefined") return;
-  const statusMap = payouts.reduce((acc, p) => {
-    acc[p.id] = { status: p.status, resolvedAt: p.resolvedAt };
-    return acc;
-  }, {} as Record<string, { status: PayoutStatus; resolvedAt: string | null }>);
-  window.localStorage.setItem("bzk-payout-status", JSON.stringify(statusMap));
+  window.localStorage.removeItem("bzk-payout-status");
 }
 
 export const getAdminOrganizers = createServerFn({ method: "POST" })
