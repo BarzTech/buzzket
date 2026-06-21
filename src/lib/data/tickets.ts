@@ -192,7 +192,11 @@ export const reserveTickets = createServerFn({ method: "POST" })
     if (error) throw new Error(error.message);
     const row = rows?.[0];
     if (!row) throw new Error("Could not reserve tickets");
-    return { reservationId: row.reservation_id, expiresAt: row.expires_at };
+    return { 
+      reservationId: row.reservation_id, 
+      expiresAt: row.expires_at,
+      serverNow: new Date().toISOString()
+    };
   });
 
 // --- Confirm payment -> paid order + issued tickets (with QR tokens) ----------
@@ -599,6 +603,32 @@ export const verifyPesapalPayment = createServerFn({ method: "POST" })
     const tickets = await getIssuedTicketsForOrder(row.order_id);
     const email = await sendTicketEmail(tickets);
     return { orderId: row.order_id, qrTokens: row.qr_tokens, tickets, email };
+  });
+
+export const validatePromoCode = createServerFn({ method: "POST" })
+  .validator(z.object({ eventId: z.string().min(1), code: z.string().min(1) }))
+  .handler(async ({ data }) => {
+    const supabase = getSupabaseAdmin();
+    if (!supabase) throw new Error("Supabase is not configured.");
+
+    const { data: promo, error } = await supabase
+      .from("promo_codes")
+      .select("id, type, value, max_uses, used_count, active, expires_at")
+      .eq("event_id", data.eventId)
+      .ilike("code", data.code.trim())
+      .maybeSingle();
+
+    if (error) throw new Error(error.message);
+    if (!promo) throw new Error("Invalid promo code.");
+    if (!promo.active) throw new Error("This promo code is no longer active.");
+    if (promo.max_uses !== null && promo.used_count >= promo.max_uses) {
+      throw new Error("This promo code has reached its usage limit.");
+    }
+    if (promo.expires_at && new Date(promo.expires_at) < new Date()) {
+      throw new Error("This promo code has expired.");
+    }
+
+    return { id: promo.id, type: promo.type as "percent" | "flat", value: promo.value };
   });
 
 export const getEventImageBase64 = createServerFn({ method: "POST" })

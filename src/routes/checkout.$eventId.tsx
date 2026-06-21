@@ -2,7 +2,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { formatUGX } from "@/lib/format";
 import { eventQueryOptions, type Event } from "@/lib/data/events";
-import { reserveTickets, initiatePesapalPayment } from "@/lib/data/tickets";
+import { reserveTickets, initiatePesapalPayment, validatePromoCode } from "@/lib/data/tickets";
 import { calcOrder, COMMISSION_FLAT_UGX, COMMISSION_PERCENT } from "@/lib/fees";
 import { Navbar } from "@/components/navbar";
 import { Button } from "@/components/ui/button";
@@ -52,6 +52,36 @@ function Checkout() {
   const [payError, setPayError] = useState<string | null>(null);
   const qrTokens = null as string[] | null;
 
+  const [promoInput, setPromoInput] = useState("");
+  const [promoError, setPromoError] = useState<string | null>(null);
+  const [promo, setPromo] = useState<{ id: string; type: "percent" | "flat"; value: number } | null>(null);
+  const [applyingPromo, setApplyingPromo] = useState(false);
+
+  // Apply discount to unitPrice
+  const discountedUnitPrice = promo
+    ? promo.type === "percent"
+      ? Math.max(0, unitPrice * (1 - promo.value / 100))
+      : Math.max(0, unitPrice - promo.value)
+    : unitPrice;
+
+  const { subtotal, fees, total } = calcOrder(discountedUnitPrice, qty);
+
+  const handleApplyPromo = async () => {
+    if (!promoInput.trim()) return;
+    setApplyingPromo(true);
+    setPromoError(null);
+    try {
+      const res = await validatePromoCode({ data: { eventId, code: promoInput.trim() } });
+      setPromo(res);
+      setPromoInput("");
+    } catch (e) {
+      setPromoError(e instanceof Error ? e.message : "Invalid promo code");
+      setPromo(null);
+    } finally {
+      setApplyingPromo(false);
+    }
+  };
+
   // Reserve inventory as soon as we have a valid tier. Depend on the stable
   // tier id (not the object) so react-query refetches don't spawn duplicate
   // server-side holds.
@@ -64,7 +94,9 @@ function Checkout() {
       .then((res) => {
         if (!active) return;
         setReservationId(res.reservationId);
-        setExpiresAt(new Date(res.expiresAt).getTime());
+        const serverNowMs = new Date(res.serverNow).getTime();
+        const serverExpiresAtMs = new Date(res.expiresAt).getTime();
+        setExpiresAt(Date.now() + (serverExpiresAtMs - serverNowMs));
       })
       .catch((e: unknown) => {
         if (!active) return;
@@ -115,10 +147,11 @@ function Checkout() {
       const callbackParams = new URLSearchParams({
         reservationId,
         qty: String(qty),
-        unitPrice: String(unitPrice),
+        unitPrice: String(discountedUnitPrice),
         contactName: contact.name.trim(),
         contactEmail: contact.email.trim(),
         contactPhone: contact.phone.trim(),
+        ...(promo ? { promoCodeId: promo.id } : {}),
       });
       const callbackUrl = `${window.location.origin}/checkout/status?${callbackParams.toString()}`;
 
@@ -131,7 +164,7 @@ function Checkout() {
           name: contact.name.trim(),
           callbackUrl,
           qty,
-          unitPrice,
+          unitPrice: discountedUnitPrice,
         },
       });
 
@@ -250,7 +283,7 @@ function Checkout() {
                     <div className="font-semibold">{event.title}</div>
                     <div className="text-sm text-muted-foreground">{tier.name} x {qty}</div>
                   </div>
-                  <div className="font-bold">{formatUGX(total)}</div>
+                  <div className="font-bold">{formatUGX(discountedUnitPrice * qty)}</div>
                 </div>
                 <div className="text-xs text-muted-foreground">Tickets are subject to availability and cannot be refunded.</div>
                 <Button onClick={() => setStep(2)} disabled={expired || !reservationId || !!reserveError} className="w-full bg-cta text-cta-foreground hover:bg-cta/90 font-semibold">
@@ -346,8 +379,39 @@ function Checkout() {
               </div>
             </div>
             <Separator className="my-4" />
+            
+            {/* Promo Code Input */}
+            <div className="space-y-3">
+              <div className="flex gap-2">
+                <Input 
+                  placeholder="Promo code" 
+                  value={promoInput} 
+                  onChange={(e) => setPromoInput(e.target.value)} 
+                  disabled={!!promo || applyingPromo}
+                  className="h-9 text-sm"
+                />
+                <Button 
+                  variant="outline" 
+                  size="sm" 
+                  onClick={promo ? () => setPromo(null) : handleApplyPromo}
+                  disabled={applyingPromo || (!promoInput.trim() && !promo)}
+                >
+                  {promo ? "Remove" : applyingPromo ? <Loader2 className="h-4 w-4 animate-spin" /> : "Apply"}
+                </Button>
+              </div>
+              {promoError && <div className="text-xs text-destructive">{promoError}</div>}
+              {promo && <div className="text-xs text-emerald-500">Promo code applied successfully!</div>}
+            </div>
+
+            <Separator className="my-4" />
             <div className="space-y-2 text-sm">
               <div className="flex justify-between"><span className="text-muted-foreground">Tickets</span><span>{formatUGX(unitPrice)} x {qty}</span></div>
+              {promo && (
+                <div className="flex justify-between text-emerald-500">
+                  <span>Discount ({promo.type === "percent" ? `${promo.value}%` : formatUGX(promo.value)})</span>
+                  <span>-{formatUGX((unitPrice - discountedUnitPrice) * qty)}</span>
+                </div>
+              )}
               <div className="flex justify-between"><span className="text-muted-foreground">Subtotal</span><span>{formatUGX(subtotal)}</span></div>
               <div className="flex justify-between">
                 <span className="text-muted-foreground">Service &amp; Processing Fee <span className="opacity-70">({Math.round(COMMISSION_PERCENT * 100)}% + {formatUGX(COMMISSION_FLAT_UGX)}/ticket)</span></span>
