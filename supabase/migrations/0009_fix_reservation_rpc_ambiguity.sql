@@ -1,9 +1,7 @@
--- Inventory availability view + concurrency-safe reservation / confirmation
--- RPCs. These are the heart of the overselling fix: capacity checks happen
--- INSIDE a transaction holding a `FOR UPDATE` row lock on the tier, so two
--- concurrent buyers can never both claim the last ticket.
+-- Fix ambiguous PL/pgSQL column references in reservation RPCs.
+-- Output columns such as `tier_id` and `order_id` are also PL/pgSQL variables,
+-- so table columns must be qualified inside these functions.
 
--- Live availability = total - sold - active (non-expired) reservations.
 create or replace view public.tier_availability as
 select
   t.id,
@@ -23,7 +21,6 @@ left join lateral (
     and r.expires_at > now()
 ) r on true;
 
--- Reserve `p_qty` tickets on a tier for 10 minutes. Raises if not enough left.
 create or replace function public.reserve_tickets(p_tier_id uuid, p_qty int)
 returns table (reservation_id uuid, tier_id uuid, quantity int, expires_at timestamptz)
 language plpgsql
@@ -41,7 +38,6 @@ begin
     raise exception 'Quantity must be positive';
   end if;
 
-  -- Serialize concurrent checkouts on this tier.
   select t.quantity_total, t.quantity_sold
     into v_total, v_sold
     from public.ticket_tiers t
@@ -52,7 +48,6 @@ begin
     raise exception 'Ticket tier % not found', p_tier_id;
   end if;
 
-  -- Opportunistically release stale holds.
   update public.reservations r
      set status = 'expired'
    where r.tier_id = p_tier_id
@@ -82,8 +77,6 @@ begin
 end;
 $$;
 
--- Convert an active reservation into a paid order + issued tickets atomically.
--- Each ticket gets a unique cryptographic qr_token (the QR payload).
 create or replace function public.confirm_reservation(
   p_reservation_id uuid,
   p_contact_name   text,
@@ -134,7 +127,6 @@ begin
     raise exception 'Sold out';
   end if;
 
-  -- Gross-up: final = ceil((desired + 500) / 0.95) per ticket.
   v_final_per := ceil((p_unit_price + 500)::numeric / 0.95);
   v_subtotal  := p_unit_price * v_res.quantity;
   v_total     := v_final_per * v_res.quantity;
@@ -172,7 +164,6 @@ begin
 end;
 $$;
 
--- Helper to free expired holds (call from a scheduled job / pg_cron if desired).
 create or replace function public.expire_stale_reservations()
 returns int
 language plpgsql
