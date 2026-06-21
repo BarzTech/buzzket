@@ -136,7 +136,6 @@ function EventDetail() {
                 <div className="font-medium">{event.organizer.name}</div>
                 <div className="text-xs text-muted-foreground">Verified organizer</div>
               </div>
-              <Button variant="outline" className="ml-auto text-sm">Follow</Button>
             </div>
 
             <Separator className="my-6" />

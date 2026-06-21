@@ -28,6 +28,9 @@ export function Navbar() {
         <nav className="hidden items-center gap-7 text-sm font-medium md:flex">
           <Link to="/" className="hover:text-primary">Discover</Link>
           <a href="/#happening-soon" className="hover:text-primary">Happening Soon</a>
+          {user && (
+            <Link to="/tickets" className="hover:text-primary">My Tickets</Link>
+          )}
           {user && (user.role === "organizer" || user.role === "admin") && (
             <Link to="/dashboard" className="hover:text-primary">Dashboard</Link>
           )}
@@ -77,6 +80,9 @@ export function Navbar() {
           <div className="mx-auto flex max-w-7xl flex-col gap-1 px-4 py-3 text-sm font-medium">
             <Link to="/" onClick={() => setOpen(false)} className="rounded-md px-2 py-2 hover:bg-accent">Discover</Link>
             <a href="/#happening-soon" onClick={() => setOpen(false)} className="rounded-md px-2 py-2 hover:bg-accent">Happening Soon</a>
+            {user && (
+              <Link to="/tickets" onClick={() => setOpen(false)} className="rounded-md px-2 py-2 hover:bg-accent">My Tickets</Link>
+            )}
             {user && (user.role === "organizer" || user.role === "admin") && (
               <Link to="/dashboard" onClick={() => setOpen(false)} className="rounded-md px-2 py-2 hover:bg-accent">Dashboard</Link>
             )}

@@ -9,6 +9,7 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as TicketsRouteImport } from './routes/tickets'
 import { Route as SellTicketsRouteImport } from './routes/sell-tickets'
 import { Route as ScanRouteImport } from './routes/scan'
 import { Route as ResourcesRouteImport } from './routes/resources'
@@ -30,6 +31,11 @@ import { Route as CheckoutStatusRouteImport } from './routes/checkout.status'
 import { Route as CheckoutEventIdRouteImport } from './routes/checkout.$eventId'
 import { Route as AdminLoginRouteImport } from './routes/admin_.login'
 
+const TicketsRoute = TicketsRouteImport.update({
+  id: '/tickets',
+  path: '/tickets',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const SellTicketsRoute = SellTicketsRouteImport.update({
   id: '/sell-tickets',
   path: '/sell-tickets',
@@ -145,6 +151,7 @@ export interface FileRoutesByFullPath {
   '/resources': typeof ResourcesRoute
   '/scan': typeof ScanRoute
   '/sell-tickets': typeof SellTicketsRoute
+  '/tickets': typeof TicketsRoute
   '/admin/login': typeof AdminLoginRoute
   '/checkout/$eventId': typeof CheckoutEventIdRoute
   '/checkout/status': typeof CheckoutStatusRoute
@@ -167,6 +174,7 @@ export interface FileRoutesByTo {
   '/resources': typeof ResourcesRoute
   '/scan': typeof ScanRoute
   '/sell-tickets': typeof SellTicketsRoute
+  '/tickets': typeof TicketsRoute
   '/admin/login': typeof AdminLoginRoute
   '/checkout/$eventId': typeof CheckoutEventIdRoute
   '/checkout/status': typeof CheckoutStatusRoute
@@ -190,6 +198,7 @@ export interface FileRoutesById {
   '/resources': typeof ResourcesRoute
   '/scan': typeof ScanRoute
   '/sell-tickets': typeof SellTicketsRoute
+  '/tickets': typeof TicketsRoute
   '/admin_/login': typeof AdminLoginRoute
   '/checkout/$eventId': typeof CheckoutEventIdRoute
   '/checkout/status': typeof CheckoutStatusRoute
@@ -214,6 +223,7 @@ export interface FileRouteTypes {
     | '/resources'
     | '/scan'
     | '/sell-tickets'
+    | '/tickets'
     | '/admin/login'
     | '/checkout/$eventId'
     | '/checkout/status'
@@ -236,6 +246,7 @@ export interface FileRouteTypes {
     | '/resources'
     | '/scan'
     | '/sell-tickets'
+    | '/tickets'
     | '/admin/login'
     | '/checkout/$eventId'
     | '/checkout/status'
@@ -258,6 +269,7 @@ export interface FileRouteTypes {
     | '/resources'
     | '/scan'
     | '/sell-tickets'
+    | '/tickets'
     | '/admin_/login'
     | '/checkout/$eventId'
     | '/checkout/status'
@@ -281,6 +293,7 @@ export interface RootRouteChildren {
   ResourcesRoute: typeof ResourcesRoute
   ScanRoute: typeof ScanRoute
   SellTicketsRoute: typeof SellTicketsRoute
+  TicketsRoute: typeof TicketsRoute
   AdminLoginRoute: typeof AdminLoginRoute
   CheckoutEventIdRoute: typeof CheckoutEventIdRoute
   CheckoutStatusRoute: typeof CheckoutStatusRoute
@@ -292,6 +305,13 @@ export interface RootRouteChildren {
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/tickets': {
+      id: '/tickets'
+      path: '/tickets'
+      fullPath: '/tickets'
+      preLoaderRoute: typeof TicketsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/sell-tickets': {
       id: '/sell-tickets'
       path: '/sell-tickets'
@@ -449,6 +469,7 @@ const rootRouteChildren: RootRouteChildren = {
   ResourcesRoute: ResourcesRoute,
   ScanRoute: ScanRoute,
   SellTicketsRoute: SellTicketsRoute,
+  TicketsRoute: TicketsRoute,
   AdminLoginRoute: AdminLoginRoute,
   CheckoutEventIdRoute: CheckoutEventIdRoute,
   CheckoutStatusRoute: CheckoutStatusRoute,
