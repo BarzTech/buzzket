@@ -93,10 +93,10 @@ begin
     return;
   end if;
 
-  update public.tickets
+  update public.tickets t
      set status = 'used', used_at = now()
-   where id = v_ticket_id
-     and status = 'valid';
+   where t.id = v_ticket_id
+     and t.status = 'valid';
   get diagnostics v_count = row_count;
 
   if v_count = 0 then
