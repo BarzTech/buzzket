@@ -192,11 +192,7 @@ export const reserveTickets = createServerFn({ method: "POST" })
     if (error) throw new Error(error.message);
     const row = rows?.[0];
     if (!row) throw new Error("Could not reserve tickets");
-    return { 
-      reservationId: row.reservation_id, 
-      expiresAt: row.expires_at,
-      serverNow: new Date().toISOString()
-    };
+    return { reservationId: row.reservation_id, expiresAt: row.expires_at };
   });
 
 // --- Confirm payment -> paid order + issued tickets (with QR tokens) ----------

@@ -94,9 +94,10 @@ function Checkout() {
       .then((res) => {
         if (!active) return;
         setReservationId(res.reservationId);
-        const serverNowMs = new Date(res.serverNow).getTime();
-        const serverExpiresAtMs = new Date(res.expiresAt).getTime();
-        setExpiresAt(Date.now() + (serverExpiresAtMs - serverNowMs));
+        // The database always creates a hold of exactly 10 minutes.
+        // By adding 10 minutes to Date.now() locally, we are immune to clock skew
+        // between the user's PC and the Supabase database.
+        setExpiresAt(Date.now() + 10 * 60 * 1000);
       })
       .catch((e: unknown) => {
         if (!active) return;
