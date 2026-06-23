@@ -1,6 +1,8 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
-import { Building2, Loader2, Ticket } from "lucide-react";
+import { Building2, Loader2 } from "lucide-react";
+
+import { Logo } from "@/components/logo";
 
 import { useAuth } from "@/lib/auth/context";
 import { getStoredUser } from "@/lib/auth/session";
@@ -62,10 +64,7 @@ function OrganizerRegister() {
     <div className="flex min-h-screen items-center justify-center bg-secondary/30 px-4">
       <Card className="w-full max-w-md p-7">
         <Link to="/" className="mb-6 flex items-center justify-center gap-2 font-bold text-lg">
-          <span className="grid h-9 w-9 place-items-center rounded-lg bg-primary text-primary-foreground">
-            <Ticket className="h-5 w-5" />
-          </span>
-          <span className="tracking-tight">buzzket</span>
+          <Logo />
         </Link>
         <div className="mx-auto mb-4 grid h-12 w-12 place-items-center rounded-xl bg-primary/10">
           <Building2 className="h-6 w-6 text-primary" />

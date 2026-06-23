@@ -1,6 +1,8 @@
 import { createFileRoute, useNavigate, Link } from "@tanstack/react-router";
 import { useState } from "react";
-import { Smartphone, Mail, Ticket, Loader2 } from "lucide-react";
+import { Smartphone, Mail, Loader2 } from "lucide-react";
+
+import { Logo } from "@/components/logo";
 
 import { useAuth } from "@/lib/auth/context";
 import { Button } from "@/components/ui/button";
@@ -87,10 +89,7 @@ function Login() {
     <div className="flex min-h-screen items-center justify-center bg-secondary/30 px-4">
       <Card className="w-full max-w-md p-7">
         <Link to="/" className="mb-6 flex items-center justify-center gap-2 font-bold text-lg">
-          <span className="grid h-9 w-9 place-items-center rounded-lg bg-primary text-primary-foreground">
-            <Ticket className="h-5 w-5" />
-          </span>
-          <span className="tracking-tight">buzzket</span>
+          <Logo />
         </Link>
 
         <h1 className="text-center text-xl font-bold">Welcome back</h1>

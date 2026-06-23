@@ -1,5 +1,5 @@
 import { Link } from "@tanstack/react-router";
-import { Ticket } from "lucide-react";
+import { Logo } from "@/components/logo";
 
 export function Footer() {
   return (
@@ -7,10 +7,7 @@ export function Footer() {
       <div className="mx-auto grid max-w-7xl gap-8 px-4 py-12 md:grid-cols-4">
         <div>
           <div className="flex items-center gap-2 font-bold">
-            <span className="grid h-8 w-8 place-items-center rounded-lg bg-primary text-primary-foreground">
-              <Ticket className="h-4 w-4" />
-            </span>
-            buzzket
+            <Logo className="h-8 w-8" />
           </div>
           <p className="mt-3 text-sm text-muted-foreground">
             Uganda&apos;s home for events, festivals and unforgettable nights.

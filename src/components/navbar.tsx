@@ -1,5 +1,6 @@
 import { Link, useNavigate } from "@tanstack/react-router";
-import { Ticket, Menu, X, LogOut, ScanLine, ShieldCheck } from "lucide-react";
+import { Menu, X, LogOut, ScanLine, ShieldCheck } from "lucide-react";
+import { Logo } from "@/components/logo";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/lib/auth/context";
@@ -19,10 +20,7 @@ export function Navbar() {
     <header className="sticky top-0 z-40 w-full border-b bg-background/85 backdrop-blur supports-[backdrop-filter]:bg-background/70">
       <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4">
         <Link to="/" className="flex items-center gap-2 font-bold text-lg">
-          <span className="grid h-9 w-9 place-items-center rounded-lg bg-primary text-primary-foreground">
-            <Ticket className="h-5 w-5" />
-          </span>
-          <span className="tracking-tight">buzzket</span>
+          <Logo />
         </Link>
 
         <nav className="hidden items-center gap-7 text-sm font-medium md:flex">
