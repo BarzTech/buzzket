@@ -29,6 +29,7 @@ import {
   saveMyOrganizerProfile,
   type OrganizerProfile,
 } from "@/lib/data/organizers";
+import { publicPlatformSettingsQueryOptions } from "@/lib/data/platform";
 import { formatUGX } from "@/lib/format";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import { Navbar } from "@/components/navbar";
@@ -120,6 +121,7 @@ function Dashboard() {
     ...payoutRequestsQueryOptions(accessToken || "pending"),
     enabled: Boolean(accessToken),
   });
+  const platformSettingsQuery = useQuery(publicPlatformSettingsQueryOptions());
 
   useEffect(() => {
     if (!profileQuery.data) return;
@@ -281,7 +283,28 @@ function Dashboard() {
 
           {tab === "overview" && (
             <div className="space-y-6">
-              <Header title="Dashboard Overview" actionLabel="Create Event" actionTo="/dashboard/form" />
+              {profileQuery.data?.approvalStatus === "pending" && (
+                <Alert variant="default" className="border-yellow-500/50 bg-yellow-500/10 text-yellow-600 dark:text-yellow-400">
+                  <AlertTitle className="font-semibold">Account Pending Approval</AlertTitle>
+                  <AlertDescription>
+                    Your organizer account is currently pending approval by an administrator. You cannot create or publish events until approved.
+                  </AlertDescription>
+                </Alert>
+              )}
+              {profileQuery.data?.approvalStatus === "rejected" && (
+                <Alert variant="destructive">
+                  <AlertTitle className="font-semibold">Account Rejected</AlertTitle>
+                  <AlertDescription>
+                    Your organizer account has been rejected. You cannot create or publish events. Please contact support.
+                  </AlertDescription>
+                </Alert>
+              )}
+              <Header 
+                title="Dashboard Overview" 
+                actionLabel="Create Event" 
+                actionTo="/dashboard/form" 
+                disabled={profileQuery.data?.approvalStatus !== "approved"} 
+              />
               <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
                 {statsCards.map((card) => (
                   <Card key={card.label} className={`p-5 ${card.accent ? "bg-primary text-primary-foreground" : ""}`}>
@@ -321,7 +344,12 @@ function Dashboard() {
 
           {tab === "events" && (
             <div className="space-y-6">
-              <Header title="My Events" actionLabel="Create Event" actionTo="/dashboard/form" />
+              <Header 
+                title="My Events" 
+                actionLabel="Create Event" 
+                actionTo="/dashboard/form" 
+                disabled={profileQuery.data?.approvalStatus !== "approved"} 
+              />
               <Card className="divide-y">
                 {events.map((event) => (
                   <EventRow key={event.id} event={event} editable />
@@ -418,6 +446,15 @@ function Dashboard() {
 
           {tab === "settings" && (
             <Section title="Organizer Settings" loading={profileQuery.isLoading}>
+              {platformSettingsQuery.data?.slaHours ? (
+                <Alert className="mb-4">
+                  <AlertTitle>Support response time</AlertTitle>
+                  <AlertDescription>
+                    Buzzket aims to respond to organizer support requests within{" "}
+                    {platformSettingsQuery.data.slaHours} hours.
+                  </AlertDescription>
+                </Alert>
+              ) : null}
               <Card className="p-5">
                 <form onSubmit={submitProfile} className="space-y-5">
                   <div className="flex flex-wrap items-center gap-4">
@@ -472,12 +509,16 @@ function Dashboard() {
   );
 }
 
-function Header({ title, actionLabel, actionTo }: { title: string; actionLabel: string; actionTo: "/dashboard/form" }) {
+function Header({ title, actionLabel, actionTo, disabled }: { title: string; actionLabel: string; actionTo: "/dashboard/form"; disabled?: boolean }) {
   return (
     <div className="flex flex-wrap items-center justify-between gap-3">
       <h1 className="text-2xl font-bold">{title}</h1>
-      <Button asChild className="bg-cta text-cta-foreground hover:bg-cta/90">
-        <Link to={actionTo}>{actionLabel}</Link>
+      <Button asChild={!disabled} disabled={disabled} className="bg-cta text-cta-foreground hover:bg-cta/90">
+        {disabled ? (
+          <span>{actionLabel}</span>
+        ) : (
+          <Link to={actionTo}>{actionLabel}</Link>
+        )}
       </Button>
     </div>
   );

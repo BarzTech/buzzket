@@ -11,6 +11,8 @@ import { type ReactNode } from "react";
 
 import appCss from "../styles.css?url";
 import { AuthProvider } from "../lib/auth/context";
+import { MaintenanceGate } from "@/components/maintenance-gate";
+import { publicPlatformSettingsQueryOptions } from "@/lib/data/platform";
 
 function NotFoundComponent() {
   return (
@@ -70,6 +72,8 @@ function ErrorComponent({ error, reset }: { error: Error; reset: () => void }) {
 }
 
 export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()({
+  beforeLoad: ({ context }) =>
+    context.queryClient.ensureQueryData(publicPlatformSettingsQueryOptions()),
   head: () => ({
     meta: [
       { charSet: "utf-8" },
@@ -116,7 +120,9 @@ function RootComponent() {
   return (
     <QueryClientProvider client={queryClient}>
       <AuthProvider>
-        <Outlet />
+        <MaintenanceGate>
+          <Outlet />
+        </MaintenanceGate>
       </AuthProvider>
     </QueryClientProvider>
   );

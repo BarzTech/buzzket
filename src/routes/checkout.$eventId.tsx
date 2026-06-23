@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { formatUGX } from "@/lib/format";
 import { eventQueryOptions, type Event } from "@/lib/data/events";
 import { reserveTickets, initiatePesapalPayment, validatePromoCode } from "@/lib/data/tickets";
+import { publicPlatformSettingsQueryOptions } from "@/lib/data/platform";
 import { calcOrder, COMMISSION_FLAT_UGX, COMMISSION_PERCENT } from "@/lib/fees";
 import { Navbar } from "@/components/navbar";
 import { Button } from "@/components/ui/button";
@@ -30,6 +31,7 @@ function Checkout() {
   const search = Route.useSearch();
   const loaderEvent = Route.useLoaderData();
   const { data: event = loaderEvent } = useQuery(eventQueryOptions(eventId));
+  const { data: platformSettings } = useQuery(publicPlatformSettingsQueryOptions());
   const qty = Math.max(1, Number(search.qty || "1"));
 
   const tier =
@@ -285,7 +287,10 @@ function Checkout() {
                   </div>
                   <div className="font-bold">{formatUGX(discountedUnitPrice * qty)}</div>
                 </div>
-                <div className="text-xs text-muted-foreground">Tickets are subject to availability and cannot be refunded.</div>
+                <div className="text-xs text-muted-foreground">
+                  {platformSettings?.refundPolicy?.trim() ||
+                    "Tickets are subject to availability and cannot be refunded unless stated otherwise."}
+                </div>
                 <Button onClick={() => setStep(2)} disabled={expired || !reservationId || !!reserveError} className="w-full bg-cta text-cta-foreground hover:bg-cta/90 font-semibold">
                   Continue
                 </Button>
@@ -364,6 +369,11 @@ function Checkout() {
                     {paying ? <Loader2 className="h-4 w-4 animate-spin" /> : `Pay ${formatUGX(total)}`}
                   </Button>
                 </div>
+                {platformSettings?.refundPolicy?.trim() && (
+                  <p className="text-[11px] text-muted-foreground">
+                    Refund policy: {platformSettings.refundPolicy.trim()}
+                  </p>
+                )}
               </div>
             )}
           </Card>

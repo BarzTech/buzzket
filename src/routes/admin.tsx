@@ -39,12 +39,16 @@ import {
   getAdminEvents,
   deleteAdminEvent,
   computeAdminStats,
+  updateOrganizerStatus,
+  getPlatformSettings,
+  updatePlatformSettings,
   type Payout,
   type PayoutStatus,
   type OrganizerRow,
   type PlatformOrder,
   type AdminStats,
   type AdminEvent,
+  type PlatformSettings,
 } from "@/lib/data/admin";
 import {
   getCommissionSettings,
@@ -156,9 +160,11 @@ const TABS: { id: Tab; label: string; icon: React.ReactNode }[] = [
 function OverviewSection({
   stats,
   payouts,
+  pendingOrganizersCount,
 }: {
   stats: AdminStats;
   payouts: Payout[];
+  pendingOrganizersCount: number;
 }) {
   const pending = payouts.filter((p) => p.status === "pending");
 
@@ -215,6 +221,18 @@ function OverviewSection({
           <div className="mt-1 text-xs text-muted-foreground">Events Listed</div>
         </div>
       </div>
+
+      {pendingOrganizersCount > 0 && (
+        <div className="rounded-2xl border border-yellow-400/30 bg-yellow-400/5 p-5">
+          <div className="flex items-center gap-2 text-yellow-400 font-semibold mb-1">
+            <AlertTriangle className="h-4 w-4" />
+            {pendingOrganizersCount} Organiser{pendingOrganizersCount !== 1 ? "s" : ""} Awaiting Approval
+          </div>
+          <p className="text-sm text-muted-foreground">
+            Review pending organiser accounts in the Organisers tab before they can publish events.
+          </p>
+        </div>
+      )}
 
       {pending.length > 0 && (
         <div className="rounded-2xl border border-yellow-400/30 bg-yellow-400/5 p-5">
@@ -384,7 +402,7 @@ function PayoutsSection({
 
 // ─── Section: Organizers ───────────────────────────────────────────────────────
 
-function OrganizersSection({ organizers }: { organizers: OrganizerRow[] }) {
+function OrganizersSection({ organizers, onUpdateStatus }: { organizers: OrganizerRow[], onUpdateStatus: (id: string, status: "pending" | "approved" | "rejected") => void }) {
   return (
     <div className="space-y-6">
       <div>
@@ -402,6 +420,8 @@ function OrganizersSection({ organizers }: { organizers: OrganizerRow[] }) {
               <th className="px-4 py-3 text-right">Platform Fee</th>
               <th className="px-4 py-3 text-right">Net Payout</th>
               <th className="px-4 py-3 text-right">Pending</th>
+              <th className="px-4 py-3 text-center">Status</th>
+              <th className="px-4 py-3 text-right">Actions</th>
             </tr>
           </thead>
           <tbody>
@@ -428,6 +448,53 @@ function OrganizersSection({ organizers }: { organizers: OrganizerRow[] }) {
                     <span className="text-yellow-400 font-semibold">{formatUGX(o.pendingPayout)}</span>
                   ) : (
                     <span className="text-muted-foreground">—</span>
+                  )}
+                </td>
+                <td className="px-4 py-3 text-center">
+                  <span
+                    className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider ${
+                      o.approvalStatus === "approved"
+                        ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-400"
+                        : o.approvalStatus === "rejected"
+                        ? "border-red-500/30 bg-red-500/10 text-red-400"
+                        : "border-yellow-500/30 bg-yellow-500/10 text-yellow-400"
+                    }`}
+                  >
+                    {o.approvalStatus}
+                  </span>
+                </td>
+                <td className="px-4 py-3 text-right">
+                  {o.approvalStatus === "pending" && (
+                    <div className="flex justify-end gap-2">
+                      <button
+                        onClick={() => onUpdateStatus(o.id, "approved")}
+                        className="rounded-lg bg-emerald-500/20 px-2 py-1 text-xs font-semibold text-emerald-400 hover:bg-emerald-500/30"
+                      >
+                        Approve
+                      </button>
+                      <button
+                        onClick={() => onUpdateStatus(o.id, "rejected")}
+                        className="rounded-lg bg-red-500/20 px-2 py-1 text-xs font-semibold text-red-400 hover:bg-red-500/30"
+                      >
+                        Reject
+                      </button>
+                    </div>
+                  )}
+                  {o.approvalStatus === "rejected" && (
+                    <button
+                      onClick={() => onUpdateStatus(o.id, "approved")}
+                      className="rounded-lg bg-emerald-500/20 px-2 py-1 text-xs font-semibold text-emerald-400 hover:bg-emerald-500/30"
+                    >
+                      Approve
+                    </button>
+                  )}
+                  {o.approvalStatus === "approved" && (
+                    <button
+                      onClick={() => onUpdateStatus(o.id, "rejected")}
+                      className="rounded-lg bg-red-500/20 px-2 py-1 text-xs font-semibold text-red-400 hover:bg-red-500/30"
+                    >
+                      Revoke
+                    </button>
                   )}
                 </td>
               </tr>
@@ -828,7 +895,13 @@ function EventsSection({ events, onDeleteEvent }: { events: AdminEvent[], onDele
 
 // ─── Section: Settings ─────────────────────────────────────────────────────────
 
-function SettingsSection() {
+function SettingsSection({
+  initialSettings,
+  onSettingsUpdated,
+}: {
+  initialSettings: PlatformSettings | null;
+  onSettingsUpdated: (s: PlatformSettings) => void;
+}) {
   const [settings, setSettings] = useState<CommissionSettings>({
     percent: 0.05,
     flatUGX: 500,
@@ -836,6 +909,14 @@ function SettingsSection() {
   const [saved, setSaved] = useState(false);
   const [percentInput, setPercentInput] = useState("");
   const [flatInput, setFlatInput] = useState("");
+  
+  const [platSettings, setPlatSettings] = useState<PlatformSettings | null>(initialSettings);
+  const [platSaved, setPlatSaved] = useState(false);
+  const [platSaving, setPlatSaving] = useState(false);
+
+  useEffect(() => {
+    setPlatSettings(initialSettings);
+  }, [initialSettings]);
 
   useEffect(() => {
     const s = getCommissionSettings();
@@ -981,25 +1062,125 @@ function SettingsSection() {
         </div>
       </div>
 
-      <div className="rounded-2xl border border-white/10 bg-white/5 p-6 space-y-4">
-        <h3 className="font-semibold text-sm">Additional Platform Settings</h3>
-        <div className="space-y-3 text-sm text-muted-foreground">
-          {[
-            "Payment gateway configuration (Flutterwave / MTN / Airtel)",
-            "Organiser onboarding approval workflow",
-            "Refund policy and SLA configuration",
-            "Platform maintenance mode toggle",
-            "Email & SMS notification templates",
-          ].map((item) => (
-            <div key={item} className="flex items-center gap-2">
-              <div className="h-1.5 w-1.5 rounded-full bg-muted-foreground/40" />
-              {item}{" "}
-              <span className="ml-auto text-xs text-muted-foreground/60 border border-white/10 rounded px-1.5 py-0.5">
-                Coming soon
-              </span>
-            </div>
-          ))}
+      <div className="rounded-2xl border border-white/10 bg-white/5 p-6 space-y-6">
+        <div className="flex items-center justify-between">
+          <div>
+            <h3 className="font-semibold text-lg">Additional Platform Settings</h3>
+            <p className="text-sm text-muted-foreground mt-0.5">Manage global platform behaviour and notifications.</p>
+          </div>
         </div>
+        
+        {platSettings ? (
+          <div className="space-y-6">
+            <div className="flex items-center justify-between rounded-xl border border-white/10 bg-white/5 p-4">
+              <div>
+                <label className="font-medium text-sm">Maintenance Mode</label>
+                <p className="text-xs text-muted-foreground mt-0.5">When active, the public site is disabled for all users except admins.</p>
+              </div>
+              <button
+                onClick={() => setPlatSettings(s => s ? { ...s, maintenanceMode: !s.maintenanceMode } : s)}
+                className="text-muted-foreground hover:text-foreground transition-colors"
+              >
+                {platSettings.maintenanceMode ? (
+                  <ToggleRight className="h-8 w-8 text-red-500" />
+                ) : (
+                  <ToggleLeft className="h-8 w-8" />
+                )}
+              </button>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium mb-1">Global Refund Policy</label>
+              <p className="text-xs text-muted-foreground mb-3">Displayed to buyers during checkout and on their tickets.</p>
+              <textarea
+                value={platSettings.refundPolicy}
+                onChange={(e) => setPlatSettings(s => s ? { ...s, refundPolicy: e.target.value } : s)}
+                placeholder="e.g. All sales are final. No refunds unless the event is cancelled."
+                className="w-full rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm focus:outline-none focus:border-violet-500 min-h-[80px] resize-y"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium mb-1">Support SLA (Hours)</label>
+              <p className="text-xs text-muted-foreground mb-3">The expected maximum response time for organiser support queries.</p>
+              <div className="flex items-center gap-2">
+                <input
+                  type="number"
+                  min="1"
+                  value={platSettings.slaHours}
+                  onChange={(e) => setPlatSettings(s => s ? { ...s, slaHours: parseInt(e.target.value) || 24 } : s)}
+                  className="w-24 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm focus:outline-none focus:border-violet-500"
+                />
+                <span className="text-sm text-muted-foreground">hours</span>
+              </div>
+            </div>
+
+            <div className="space-y-4 pt-2 border-t border-white/10">
+              <h4 className="font-medium text-sm">Notification Templates</h4>
+              <div>
+                <label className="block text-xs text-muted-foreground mb-1.5">Email Subject</label>
+                <input
+                  type="text"
+                  value={platSettings.emailTemplateSubject}
+                  onChange={(e) => setPlatSettings(s => s ? { ...s, emailTemplateSubject: e.target.value } : s)}
+                  className="w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm focus:outline-none focus:border-violet-500"
+                />
+              </div>
+              <div>
+                <label className="block text-xs text-muted-foreground mb-1.5">Email Body</label>
+                <textarea
+                  value={platSettings.emailTemplateBody}
+                  onChange={(e) => setPlatSettings(s => s ? { ...s, emailTemplateBody: e.target.value } : s)}
+                  className="w-full rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm focus:outline-none focus:border-violet-500 min-h-[100px] resize-y"
+                />
+              </div>
+              <div>
+                <label className="block text-xs text-muted-foreground mb-1.5">SMS Notification</label>
+                <textarea
+                  value={platSettings.smsTemplate}
+                  onChange={(e) => setPlatSettings(s => s ? { ...s, smsTemplate: e.target.value } : s)}
+                  className="w-full rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm focus:outline-none focus:border-violet-500 min-h-[60px] resize-y"
+                />
+                <p className="text-[10px] text-muted-foreground mt-1.5">Available variables: {'{{eventName}}'}, {'{{userName}}'}, {'{{ticketTier}}'}</p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-3 pt-4">
+              <button
+                onClick={async () => {
+                  if (!platSettings) return;
+                  setPlatSaving(true);
+                  try {
+                    const supabase = getSupabaseBrowserClient();
+                    const { data } = supabase ? await supabase.auth.getSession() : { data: { session: null } };
+                    const accessToken = data.session?.access_token;
+                    if (accessToken) {
+                      await updatePlatformSettings({ data: { accessToken, settings: platSettings } });
+                      onSettingsUpdated(platSettings);
+                      setPlatSaved(true);
+                      setTimeout(() => setPlatSaved(false), 3000);
+                    }
+                  } catch (e) {
+                    alert("Failed to save settings");
+                  } finally {
+                    setPlatSaving(false);
+                  }
+                }}
+                disabled={platSaving}
+                className="flex items-center gap-2 rounded-xl bg-primary px-5 py-2.5 text-sm font-semibold text-primary-foreground hover:bg-primary/90 transition-colors"
+              >
+                {platSaving ? "Saving..." : "Save Platform Settings"}
+              </button>
+              {platSaved && (
+                <span className="text-xs text-emerald-400 font-medium animate-fade-in">
+                  ✓ Saved successfully
+                </span>
+              )}
+            </div>
+          </div>
+        ) : (
+          <div className="text-sm text-muted-foreground">Loading settings...</div>
+        )}
       </div>
     </div>
   );
@@ -1013,6 +1194,7 @@ function AdminPage() {
   const [organizers, setOrganizers] = useState<OrganizerRow[]>([]);
   const [orders, setOrders] = useState<PlatformOrder[]>([]);
   const [adminEvents, setAdminEvents] = useState<AdminEvent[]>([]);
+  const [platformSettings, setPlatformSettings] = useState<PlatformSettings | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
 
@@ -1028,11 +1210,12 @@ function AdminPage() {
         getAdminOrganizers({ data: { accessToken } }),
         getAdminOrders({ data: { accessToken } }),
         getAdminEvents({ data: { accessToken } }),
+        getPlatformSettings({ data: { accessToken } }),
       ]);
     };
 
     load()
-      .then(([payoutsRes, organizersRes, ordersRes, eventsRes]) => {
+      .then(([payoutsRes, organizersRes, ordersRes, eventsRes, settingsRes]) => {
         let mergedPayouts = payoutsRes;
         if (typeof window !== "undefined") {
           const raw = window.localStorage.getItem("bzk-payout-status");
@@ -1053,6 +1236,7 @@ function AdminPage() {
         setOrganizers(organizersRes);
         setOrders(ordersRes);
         setAdminEvents(eventsRes);
+        setPlatformSettings(settingsRes);
       })
       .catch((err) => {
         console.error("Failed to load admin data", err);
@@ -1087,6 +1271,26 @@ function AdminPage() {
     [],
   );
 
+  const handleOrganizerStatusUpdate = useCallback(
+    async (id: string, status: "pending" | "approved" | "rejected") => {
+      try {
+        const supabase = getSupabaseBrowserClient();
+        const { data } = supabase ? await supabase.auth.getSession() : { data: { session: null } };
+        const accessToken = data.session?.access_token;
+        if (!accessToken) throw new Error("Admin session missing.");
+
+        await updateOrganizerStatus({ data: { accessToken, organizerId: id, status } });
+        setOrganizers((prev) =>
+          prev.map((o) => (o.id === id ? { ...o, approvalStatus: status } : o))
+        );
+      } catch (err) {
+        console.error("Failed to update organizer status", err);
+        alert("Failed to update organizer status.");
+      }
+    },
+    [],
+  );
+
   const handleDeleteEvent = useCallback(
     async (id: string) => {
       try {
@@ -1106,6 +1310,7 @@ function AdminPage() {
   );
 
   const pendingCount = payouts.filter((p) => p.status === "pending").length;
+  const pendingOrganizersCount = organizers.filter((o) => o.approvalStatus === "pending").length;
 
   if (loading) {
     return (
@@ -1175,6 +1380,11 @@ function AdminPage() {
                       {pendingCount}
                     </span>
                   )}
+                  {tab.id === "organizers" && pendingOrganizersCount > 0 && (
+                    <span className="ml-auto flex h-5 min-w-5 items-center justify-center rounded-full bg-yellow-400 text-[10px] font-bold text-black px-1">
+                      {pendingOrganizersCount}
+                    </span>
+                  )}
                 </button>
               ))}
             </nav>
@@ -1183,7 +1393,11 @@ function AdminPage() {
           {/* Main content */}
           <main className="flex-1 min-w-0">
             {activeTab === "overview" && (
-              <OverviewSection stats={stats} payouts={payouts} />
+              <OverviewSection
+                stats={stats}
+                payouts={payouts}
+                pendingOrganizersCount={pendingOrganizersCount}
+              />
             )}
             {activeTab === "events" && (
               <EventsSection events={adminEvents} onDeleteEvent={handleDeleteEvent} />
@@ -1191,10 +1405,10 @@ function AdminPage() {
             {activeTab === "payouts" && (
               <PayoutsSection payouts={payouts} onUpdateStatus={handleUpdatePayoutStatus} />
             )}
-            {activeTab === "organizers" && <OrganizersSection organizers={organizers} />}
+            {activeTab === "organizers" && <OrganizersSection organizers={organizers} onUpdateStatus={handleOrganizerStatusUpdate} />}
             {activeTab === "orders" && <OrdersSection orders={orders} />}
             {activeTab === "promos" && <PromoCodesSection />}
-            {activeTab === "settings" && <SettingsSection />}
+            {activeTab === "settings" && <SettingsSection initialSettings={platformSettings} onSettingsUpdated={setPlatformSettings} />}
           </main>
         </div>
       </div>

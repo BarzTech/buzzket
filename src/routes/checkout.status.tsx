@@ -1,6 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
-import { Loader2, CheckCircle, AlertCircle, MailCheck, MailWarning } from "lucide-react";
+import { Loader2, CheckCircle, AlertCircle, MailCheck, MailWarning, MessageSquare } from "lucide-react";
 import { verifyPesapalPayment, type IssuedTicket } from "@/lib/data/tickets";
 import { Navbar } from "@/components/navbar";
 import { Button } from "@/components/ui/button";
@@ -29,6 +29,7 @@ function CheckoutStatus() {
   const [error, setError] = useState<string | null>(null);
   const [tickets, setTickets] = useState<IssuedTicket[] | null>(null);
   const [emailStatus, setEmailStatus] = useState<{ sent: boolean; message: string } | null>(null);
+  const [smsStatus, setSmsStatus] = useState<{ sent: boolean; message: string } | null>(null);
 
   useEffect(() => {
     if (!trackingId || !reservationId) {
@@ -53,6 +54,7 @@ function CheckoutStatus() {
         if (!active) return;
         setTickets(res.tickets);
         setEmailStatus(res.email);
+        setSmsStatus(res.sms ?? null);
         setLoading(false);
       })
       .catch((e: unknown) => {
@@ -112,6 +114,14 @@ function CheckoutStatus() {
               }`}>
                 {emailStatus.sent ? <MailCheck className="h-5 w-5" /> : <MailWarning className="h-5 w-5" />}
                 {emailStatus.message}
+              </div>
+            )}
+            {smsStatus && (
+              <div className={`mx-auto flex max-w-xl items-center gap-2 rounded-lg p-3 text-left text-sm ${
+                smsStatus.sent ? "bg-green-500/10 text-green-700 dark:text-green-400" : "bg-amber-500/10 text-amber-700 dark:text-amber-400"
+              }`}>
+                {smsStatus.sent ? <MessageSquare className="h-5 w-5" /> : <MessageSquare className="h-5 w-5" />}
+                {smsStatus.message}
               </div>
             )}
             <div className="mt-8 space-y-6 text-left">

@@ -5,6 +5,7 @@ import { Loader2, Ticket as TicketIcon } from "lucide-react";
 
 import { requireAuthOrRedirect } from "@/lib/auth/guard";
 import { myTicketsQueryOptions } from "@/lib/data/customer-tickets";
+import { publicPlatformSettingsQueryOptions } from "@/lib/data/platform";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import { Navbar } from "@/components/navbar";
 import { Ticket } from "@/components/ticket";
@@ -36,6 +37,7 @@ function MyTickets() {
     ...myTicketsQueryOptions(accessToken || "pending"),
     enabled: Boolean(accessToken),
   });
+  const { data: platformSettings } = useQuery(publicPlatformSettingsQueryOptions());
 
   return (
     <div className="min-h-screen bg-background">
@@ -99,6 +101,12 @@ function MyTickets() {
                 issuedTicket={ticket}
               />
             ))}
+            {platformSettings?.refundPolicy?.trim() && (
+              <p className="rounded-xl border border-border bg-muted/30 p-4 text-xs text-muted-foreground">
+                <span className="font-medium text-foreground">Refund policy:</span>{" "}
+                {platformSettings.refundPolicy.trim()}
+              </p>
+            )}
           </div>
         )}
       </main>

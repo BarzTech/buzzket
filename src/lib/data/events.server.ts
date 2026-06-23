@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
+import { assertOrganizerApproved } from "@/lib/data/organizers.server";
 
 export async function upsertEventServer(eventData: {
   id?: string;
@@ -23,6 +24,7 @@ export async function upsertEventServer(eventData: {
   if (!supabase) throw new Error("Supabase client not available");
 
   const { tiers, id, organizerId, ...eventFields } = eventData;
+  await assertOrganizerApproved(supabase, organizerId);
   const eventId = id ?? randomUUID();
   const priceFrom = Math.min(...tiers.map((tier) => tier.price));
 

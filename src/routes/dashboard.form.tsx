@@ -1,13 +1,15 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useForm, useFieldArray } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
+import { useQuery } from "@tanstack/react-query";
 
 import { requireRoleOrRedirect } from "@/lib/auth/guard";
 import { getStoredUser } from "@/lib/auth/session";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import { eventQueryOptions, upsertEvent } from "@/lib/data/events";
+import { organizerProfileQueryOptions } from "@/lib/data/organizers";
 import { CATEGORIES } from "@/lib/format";
 import { Navbar } from "@/components/navbar";
 import { Card } from "@/components/ui/card";
@@ -61,6 +63,22 @@ function EventForm() {
   const event = Route.useLoaderData();
   const navigate = useNavigate();
   const { eventId } = Route.useSearch();
+  const user = getStoredUser();
+  const [accessToken, setAccessToken] = useState("");
+
+  useEffect(() => {
+    const supabase = getSupabaseBrowserClient();
+    if (!supabase) return;
+    supabase.auth.getSession().then(({ data }) => {
+      setAccessToken(data.session?.access_token ?? "");
+    });
+  }, []);
+
+  const profileQuery = useQuery({
+    ...organizerProfileQueryOptions(accessToken || "pending"),
+    enabled: Boolean(accessToken) && user?.role !== "admin",
+  });
+  const approvalBlocked = user?.role !== "admin" && profileQuery.data?.approvalStatus !== "approved";
 
   const form = useForm<EventFormValues>({
     resolver: zodResolver(eventFormSchema),
@@ -173,6 +191,18 @@ function EventForm() {
           <Link to="/dashboard"><ArrowLeft className="mr-2 h-4 w-4" /> Back to Dashboard</Link>
         </Button>
         <h1 className="text-2xl font-bold">{eventId ? "Edit Event" : "Create New Event"}</h1>
+
+        {approvalBlocked && (
+          <Alert className="mt-4 border-yellow-500/50 bg-yellow-500/10">
+            <AlertCircle className="h-4 w-4" />
+            <AlertTitle>Approval required</AlertTitle>
+            <AlertDescription>
+              {profileQuery.data?.approvalStatus === "rejected"
+                ? "Your organizer account was rejected. Contact support if you believe this is a mistake."
+                : "Your organizer account is pending approval. You can prepare this form, but saving events is disabled until an admin approves your account."}
+            </AlertDescription>
+          </Alert>
+        )}
 
         <Card className="mt-6 p-6">
           <Form {...form}>
@@ -387,7 +417,7 @@ function EventForm() {
                 <Button asChild variant="outline">
                   <Link to="/dashboard">Cancel</Link>
                 </Button>
-                 <Button type="submit" disabled={isSubmitting} className="bg-cta text-cta-foreground hover:bg-cta/90 font-semibold">
+                 <Button type="submit" disabled={isSubmitting || approvalBlocked} className="bg-cta text-cta-foreground hover:bg-cta/90 font-semibold">
                   {isSubmitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : "Save Event"}
                 </Button>
               </div>

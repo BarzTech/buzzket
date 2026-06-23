@@ -14,6 +14,7 @@ export type OrganizerProfile = {
   payoutMethod: string;
   payoutAccount: string;
   followerCount: number;
+  approvalStatus: string;
 };
 
 export type OrganizerFinance = {
@@ -100,7 +101,29 @@ export const getMyOrganizerProfile = createServerFn({ method: "POST" })
       payoutMethod: profile?.payout_method || "MTN Mobile Money",
       payoutAccount: profile?.payout_account || "",
       followerCount: count ?? 0,
+      approvalStatus: profile?.approval_status || "pending",
     };
+  });
+
+export const bootstrapOrganizerProfile = createServerFn({ method: "POST" })
+  .validator(accessTokenSchema.extend({ displayName: z.string().min(2) }))
+  .handler(async ({ data }) => {
+    const { supabase, user } = await requireUser(data.accessToken);
+    const { data: existing, error: existingError } = await supabase
+      .from("organizer_profiles")
+      .select("user_id")
+      .eq("user_id", user.id)
+      .maybeSingle();
+    if (existingError) throw new Error(existingError.message);
+    if (existing) return { ok: true, created: false };
+
+    const { error } = await supabase.from("organizer_profiles").insert({
+      user_id: user.id,
+      display_name: data.displayName.trim(),
+      approval_status: "pending",
+    });
+    if (error) throw new Error(error.message);
+    return { ok: true, created: true };
   });
 
 export const saveMyOrganizerProfile = createServerFn({ method: "POST" })

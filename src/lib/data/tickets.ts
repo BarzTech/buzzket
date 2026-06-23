@@ -3,6 +3,11 @@ import { z } from "zod";
 
 import { getSupabaseBrowserClient } from "../supabase/client";
 import { getSupabaseAdmin } from "../supabase/server";
+import {
+  applyNotificationTemplate,
+  assertPlatformOperational,
+  fetchPlatformSettings,
+} from "./platform";
 
 export type IssuedTicket = {
   id: string;
@@ -14,6 +19,7 @@ export type IssuedTicket = {
   orderId: string;
   orderTotal: number;
   contactEmail: string;
+  contactPhone: string;
   event: {
     id: string;
     title: string;
@@ -34,6 +40,7 @@ type TicketRow = {
     id: string;
     total: number;
     contact_email: string;
+    contact_phone: string | null;
   } | null;
   tier: {
     name: string;
@@ -67,7 +74,8 @@ async function getIssuedTicketsForOrder(orderId: string): Promise<IssuedTicket[]
       order:orders!tickets_order_id_fkey (
         id,
         total,
-        contact_email
+        contact_email,
+        contact_phone
       ),
       tier:ticket_tiers!tickets_tier_id_fkey (
         name,
@@ -98,6 +106,7 @@ async function getIssuedTicketsForOrder(orderId: string): Promise<IssuedTicket[]
     orderId: row.order?.id ?? row.order_id,
     orderTotal: row.order?.total ?? 0,
     contactEmail: row.order?.contact_email ?? "",
+    contactPhone: row.order?.contact_phone ?? "",
     event: {
       id: row.tier?.event?.id ?? "",
       title: row.tier?.event?.title ?? "Buzzket Event",
@@ -119,7 +128,16 @@ async function sendTicketEmail(tickets: IssuedTicket[]): Promise<{ sent: boolean
     return { sent: false, message: "Ticket email is not configured. Add RESEND_API_KEY and TICKET_EMAIL_FROM." };
   }
 
+  const settings = await fetchPlatformSettings();
   const first = tickets[0];
+  const templateVars = {
+    eventName: first.event.title,
+    userName: first.holder || "there",
+    ticketTier: first.tier,
+  };
+  const subject = applyNotificationTemplate(settings.emailTemplateSubject, templateVars);
+  const intro = applyNotificationTemplate(settings.emailTemplateBody, templateVars);
+
   const ticketRows = tickets
     .map(
       (ticket) => `
@@ -134,9 +152,9 @@ async function sendTicketEmail(tickets: IssuedTicket[]): Promise<{ sent: boolean
 
   const html = `
     <div style="font-family:Arial,sans-serif;color:#111827;line-height:1.5;">
-      <h1 style="margin:0 0 8px;">Your Buzzket ticket${tickets.length > 1 ? "s" : ""}</h1>
-      <p style="margin:0 0 20px;">Your payment was confirmed for <strong>${first.event.title}</strong>.</p>
+      <p style="margin:0 0 20px;">${intro}</p>
       ${first.event.image ? `<img src="${first.event.image}" alt="" style="width:100%;max-width:560px;height:220px;object-fit:cover;border-radius:12px;margin-bottom:20px;" />` : ""}
+      <p><strong>Event:</strong> ${first.event.title}</p>
       <p><strong>Date:</strong> ${new Date(first.event.date).toLocaleString("en-UG")}</p>
       <p><strong>Venue:</strong> ${first.event.venue}${first.event.city ? `, ${first.event.city}` : ""}</p>
       <table style="border-collapse:collapse;width:100%;max-width:720px;margin-top:16px;">
@@ -162,7 +180,7 @@ async function sendTicketEmail(tickets: IssuedTicket[]): Promise<{ sent: boolean
     body: JSON.stringify({
       from,
       to,
-      subject: `Your tickets for ${first.event.title}`,
+      subject,
       html,
     }),
   });
@@ -175,11 +193,51 @@ async function sendTicketEmail(tickets: IssuedTicket[]): Promise<{ sent: boolean
   return { sent: true, message: "Ticket email sent." };
 }
 
+async function sendTicketSms(tickets: IssuedTicket[]): Promise<{ sent: boolean; message: string }> {
+  const phone = tickets[0]?.contactPhone?.replace(/\D/g, "");
+  if (!phone || phone.length < 9) {
+    return { sent: false, message: "No customer phone number was provided." };
+  }
+
+  const settings = await fetchPlatformSettings();
+  const first = tickets[0];
+  const message = applyNotificationTemplate(settings.smsTemplate, {
+    eventName: first.event.title,
+    userName: first.holder || "there",
+    ticketTier: first.tier,
+  });
+
+  const smsUrl = process.env.SMS_WEBHOOK_URL;
+  if (!smsUrl) {
+    console.info("[Buzzket SMS preview]", phone, message);
+    return { sent: false, message: "SMS notifications are not configured. Add SMS_WEBHOOK_URL to enable delivery." };
+  }
+
+  const res = await fetch(smsUrl, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ to: phone, message }),
+  });
+
+  if (!res.ok) {
+    const text = await res.text();
+    return { sent: false, message: `SMS notification failed: ${res.status} ${text}` };
+  }
+
+  return { sent: true, message: "SMS notification sent." };
+}
+
+async function sendTicketNotifications(tickets: IssuedTicket[]) {
+  const [email, sms] = await Promise.all([sendTicketEmail(tickets), sendTicketSms(tickets)]);
+  return { email, sms };
+}
+
 // --- Reserve (10-min hold, concurrency-safe via reserve_tickets RPC) ----------
 
 export const reserveTickets = createServerFn({ method: "POST" })
   .validator(z.object({ tierId: z.string().min(1), qty: z.number().int().positive() }))
   .handler(async ({ data }) => {
+    await assertPlatformOperational();
     const supabase = getSupabaseAdmin();
     if (!supabase) {
       throw new Error("Ticket reservations require Supabase server credentials.");
@@ -227,8 +285,8 @@ export const confirmOrder = createServerFn({ method: "POST" })
     const row = rows?.[0];
     if (!row) throw new Error("Could not confirm order");
     const tickets = await getIssuedTicketsForOrder(row.order_id);
-    const email = await sendTicketEmail(tickets);
-    return { orderId: row.order_id, qrTokens: row.qr_tokens, tickets, email };
+    const notifications = await sendTicketNotifications(tickets);
+    return { orderId: row.order_id, qrTokens: row.qr_tokens, tickets, ...notifications };
   });
 
 export const getOrderTickets = createServerFn({ method: "POST" })
@@ -351,6 +409,7 @@ export const initiatePesapalPayment = createServerFn({ method: "POST" })
     }),
   )
   .handler(async ({ data }) => {
+    await assertPlatformOperational();
     const key = process.env.PESAPAL_CONSUMER_KEY;
     const secret = process.env.PESAPAL_CONSUMER_SECRET;
     const apiUrl = process.env.PESAPAL_API_URL;
@@ -492,8 +551,8 @@ export async function verifyPesapalPaymentBackground(orderTrackingId: string, re
         .single();
       if (resv?.order_id) {
         const tickets = await getIssuedTicketsForOrder(resv.order_id);
-        const email = await sendTicketEmail(tickets);
-        return { orderId: resv.order_id, tickets, email };
+        const notifications = await sendTicketNotifications(tickets);
+        return { orderId: resv.order_id, tickets, ...notifications };
       }
     }
     throw new Error(error.message);
@@ -502,8 +561,8 @@ export async function verifyPesapalPaymentBackground(orderTrackingId: string, re
   const row = rows?.[0];
   if (!row) throw new Error("Could not confirm order");
   const tickets = await getIssuedTicketsForOrder(row.order_id);
-  const email = await sendTicketEmail(tickets);
-  return { orderId: row.order_id, tickets, email };
+  const notifications = await sendTicketNotifications(tickets);
+  return { orderId: row.order_id, tickets, ...notifications };
 }
 
 export const verifyPesapalPayment = createServerFn({ method: "POST" })
@@ -586,8 +645,8 @@ export const verifyPesapalPayment = createServerFn({ method: "POST" })
             .eq("order_id", resv.order_id);
           if (tix && tix.length > 0) {
             const tickets = await getIssuedTicketsForOrder(resv.order_id);
-            const email = await sendTicketEmail(tickets);
-            return { orderId: resv.order_id, qrTokens: tix.map((t) => t.qr_token), tickets, email };
+            const notifications = await sendTicketNotifications(tickets);
+            return { orderId: resv.order_id, qrTokens: tix.map((t) => t.qr_token), tickets, ...notifications };
           }
         }
       }
@@ -597,8 +656,8 @@ export const verifyPesapalPayment = createServerFn({ method: "POST" })
     const row = rows?.[0];
     if (!row) throw new Error("Could not confirm order");
     const tickets = await getIssuedTicketsForOrder(row.order_id);
-    const email = await sendTicketEmail(tickets);
-    return { orderId: row.order_id, qrTokens: row.qr_tokens, tickets, email };
+    const notifications = await sendTicketNotifications(tickets);
+    return { orderId: row.order_id, qrTokens: row.qr_tokens, tickets, ...notifications };
   });
 
 export const validatePromoCode = createServerFn({ method: "POST" })

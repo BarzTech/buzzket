@@ -4,6 +4,8 @@ import { Building2, Loader2, Ticket } from "lucide-react";
 
 import { useAuth } from "@/lib/auth/context";
 import { getStoredUser } from "@/lib/auth/session";
+import { bootstrapOrganizerProfile } from "@/lib/data/organizers";
+import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -40,6 +42,14 @@ function OrganizerRegister() {
         setSuccess("Registration successful! Please check your inbox and verify your email to activate your organizer account.");
         return;
       }
+
+      const supabase = getSupabaseBrowserClient();
+      const { data: sessionData } = supabase ? await supabase.auth.getSession() : { data: { session: null } };
+      const accessToken = sessionData.session?.access_token;
+      if (accessToken) {
+        await bootstrapOrganizerProfile({ data: { accessToken, displayName: name.trim() } });
+      }
+
       navigate({ to: "/dashboard" });
     } catch (err) {
       setError(err instanceof Error ? err.message : "An unexpected error occurred during registration.");
@@ -62,7 +72,7 @@ function OrganizerRegister() {
         </div>
         <h1 className="text-center text-xl font-bold">Register as an organiser</h1>
         <p className="mt-1 text-center text-sm text-muted-foreground">
-          Create an organiser account to publish events and scan tickets.
+          Create an organiser account to publish events and scan tickets. New accounts require admin approval before you can list events.
         </p>
 
         {!auth.supabaseEnabled && (

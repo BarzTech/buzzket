@@ -1,6 +1,12 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
+import {
+  fetchPlatformSettings,
+  type PlatformSettings,
+} from "./platform";
 import { getSupabaseAdmin } from "../supabase/server";
+
+export type { PlatformSettings };
 
 export type PayoutStatus = "pending" | "approved" | "rejected" | "paid";
 
@@ -33,6 +39,7 @@ export type OrganizerRow = {
   totalEvents: number;
   pendingPayout: number;
   joinedAt: string;
+  approvalStatus: string;
 };
 
 export type PlatformOrder = {
@@ -231,7 +238,31 @@ export const getAdminOrganizers = createServerFn({ method: "POST" })
     totalEvents: number;
     pendingPayout: number;
     joinedAt: string;
+    approvalStatus: string;
   }>();
+
+  const { data: profiles, error: profilesError } = await supabase
+    .from("organizer_profiles")
+    .select("user_id, approval_status, display_name, created_at");
+  if (profilesError) throw new Error(profilesError.message);
+
+  for (const profile of profiles ?? []) {
+    if (orgMap.has(profile.user_id)) continue;
+    orgMap.set(profile.user_id, {
+      id: profile.user_id,
+      name: profile.display_name || "Organizer",
+      email: "organizer@buzzket.com",
+      phone: "-",
+      totalGross: 0,
+      totalFees: 0,
+      totalNet: 0,
+      totalTicketsSold: 0,
+      totalEvents: 0,
+      pendingPayout: 0,
+      joinedAt: profile.created_at,
+      approvalStatus: profile.approval_status,
+    });
+  }
 
   for (const event of events ?? []) {
     const organizerId = event.organizer_id;
@@ -250,6 +281,8 @@ export const getAdminOrganizers = createServerFn({ method: "POST" })
         totalEvents: 0,
         pendingPayout: 0,
         joinedAt: event.created_at,
+        approvalStatus:
+          profiles?.find((p) => p.user_id === organizerId)?.approval_status || "pending",
       });
     }
 
@@ -389,3 +422,55 @@ export function computeAdminStats(payouts: Payout[], orders: PlatformOrder[]): A
     totalOrders: orders.length,
   };
 }
+
+export const updateOrganizerStatus = createServerFn({ method: "POST" })
+  .validator(adminRequestSchema.extend({ organizerId: z.string().min(1), status: z.enum(["pending", "approved", "rejected"]) }))
+  .handler(async ({ data: request }) => {
+    const supabase = await requireAdmin(request.accessToken);
+    const { error } = await supabase
+      .from("organizer_profiles")
+      .update({ approval_status: request.status })
+      .eq("user_id", request.organizerId);
+    if (error) throw new Error(error.message);
+    return { ok: true };
+  });
+
+export const getPlatformSettings = createServerFn({ method: "POST" })
+  .validator(adminRequestSchema)
+  .handler(async ({ data: request }): Promise<PlatformSettings> => {
+    await requireAdmin(request.accessToken);
+    return fetchPlatformSettings();
+  });
+
+export const updatePlatformSettings = createServerFn({ method: "POST" })
+  .validator(adminRequestSchema.extend({
+    settings: z.object({
+      maintenanceMode: z.boolean(),
+      refundPolicy: z.string(),
+      slaHours: z.number(),
+      emailTemplateSubject: z.string(),
+      emailTemplateBody: z.string(),
+      smsTemplate: z.string()
+    })
+  }))
+  .handler(async ({ data: request }) => {
+    const supabase = await requireAdmin(request.accessToken);
+    const { error } = await supabase
+      .from("platform_settings")
+      .upsert(
+        {
+          id: 1,
+          maintenance_mode: request.settings.maintenanceMode,
+          refund_policy: request.settings.refundPolicy,
+          sla_hours: request.settings.slaHours,
+          email_template_subject: request.settings.emailTemplateSubject,
+          email_template_body: request.settings.emailTemplateBody,
+          sms_template: request.settings.smsTemplate,
+        },
+        { onConflict: "id" },
+      );
+
+    if (error) throw new Error(error.message);
+    return { ok: true };
+  });
+

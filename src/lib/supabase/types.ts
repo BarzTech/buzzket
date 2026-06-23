@@ -163,6 +163,42 @@ export type Database = {
         Update: Partial<Database["public"]["Tables"]["promo_codes"]["Row"]>;
         Relationships: [];
       };
+      organizer_profiles: {
+        Row: {
+          user_id: string;
+          display_name: string;
+          bio: string;
+          avatar_url: string;
+          phone: string;
+          website: string;
+          payout_method: string;
+          payout_account: string;
+          approval_status: "pending" | "approved" | "rejected";
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<Database["public"]["Tables"]["organizer_profiles"]["Row"]> & {
+          user_id: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["organizer_profiles"]["Row"]>;
+        Relationships: [];
+      };
+      platform_settings: {
+        Row: {
+          id: number;
+          maintenance_mode: boolean;
+          refund_policy: string;
+          sla_hours: number;
+          email_template_subject: string;
+          email_template_body: string;
+          sms_template: string;
+        };
+        Insert: Partial<Database["public"]["Tables"]["platform_settings"]["Row"]> & {
+          id: number;
+        };
+        Update: Partial<Database["public"]["Tables"]["platform_settings"]["Row"]>;
+        Relationships: [];
+      };
     };
     Views: {
       tier_availability: {
