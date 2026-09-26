@@ -56,6 +56,7 @@ export const getMyTickets = createServerFn({ method: "POST" })
           event:events!ticket_tiers_event_id_fkey (
             id,
             title,
+            category,
             date,
             venue,
             city,
@@ -81,31 +82,41 @@ export const getMyTickets = createServerFn({ method: "POST" })
         event: {
           id: string;
           title: string;
+          category: string;
           date: string;
           venue: string;
           city: string;
           image: string;
         } | null;
       } | null;
-    }>).map((row) => ({
-      id: row.id,
-      qrToken: row.qr_token,
-      status: row.status,
-      holder: row.holder_name,
-      tier: row.tier?.name ?? "General Admission",
-      price: row.tier?.price ?? 0,
-      orderId: row.order?.id ?? row.order_id,
-      orderTotal: row.order?.total ?? 0,
-      contactEmail: row.order?.contact_email ?? "",
-      event: {
-        id: row.tier?.event?.id ?? "",
-        title: row.tier?.event?.title ?? "Buzzket Event",
-        date: row.tier?.event?.date ?? new Date().toISOString(),
-        venue: row.tier?.event?.venue ?? "Confirmed venue",
-        city: row.tier?.event?.city ?? "",
-        image: row.tier?.event?.image ?? "",
-      },
-    }));
+    }>).map((row) => {
+      const tierName = row.tier?.name ?? "General Admission";
+      const isVip = /vip/i.test(tierName);
+      return {
+        id: row.id,
+        qrToken: row.qr_token,
+        status: row.status,
+        holder: row.holder_name,
+        tier: tierName,
+        price: row.tier?.price ?? 0,
+        orderId: row.order?.id ?? row.order_id,
+        orderTotal: row.order?.total ?? 0,
+        contactEmail: row.order?.contact_email ?? "",
+        contactPhone: "",
+        seat: "GA",
+        row: "N/A",
+        gate: isVip ? "VIP" : "MAIN",
+        event: {
+          id: row.tier?.event?.id ?? "",
+          title: row.tier?.event?.title ?? "Buzzket Event",
+          category: row.tier?.event?.category ?? "Event",
+          date: row.tier?.event?.date ?? new Date().toISOString(),
+          venue: row.tier?.event?.venue ?? "Confirmed venue",
+          city: row.tier?.event?.city ?? "",
+          image: row.tier?.event?.image ?? "",
+        },
+      };
+    });
   });
 
 export const myTicketsQueryOptions = (accessToken: string) =>

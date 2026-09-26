@@ -54,3 +54,38 @@ export const formatDate = (iso: string) =>
     minute: "2-digit",
     timeZone: "Africa/Kampala",
   });
+
+export const formatTicketDate = (iso: string) => {
+  try {
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return "DATE TBA";
+    const month = d.toLocaleDateString("en-US", { month: "short", timeZone: "Africa/Kampala" }).toUpperCase();
+    const day = d.toLocaleDateString("en-US", { day: "numeric", timeZone: "Africa/Kampala" });
+    const year = d.toLocaleDateString("en-US", { year: "numeric", timeZone: "Africa/Kampala" });
+    return `${month} ${day}, ${year}`;
+  } catch {
+    return "DATE TBA";
+  }
+};
+
+export const formatTicketTime = (iso: string) => {
+  try {
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return "AT TBA";
+    const time = d.toLocaleTimeString("en-US", {
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: true,
+      timeZone: "Africa/Kampala",
+    }).toUpperCase();
+    return `AT ${time}`;
+  } catch {
+    return "AT TBA";
+  }
+};
+
+export const formatTicketNumber = (id: string, qrToken?: string) => {
+  const token = qrToken || id || "00000000";
+  const clean = token.replace(/[^a-zA-Z0-9]/g, "").toUpperCase();
+  return `BZK-${clean.slice(0, 8)}`;
+};

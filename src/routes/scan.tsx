@@ -17,6 +17,11 @@ export const Route = createFileRoute("/scan")({
   component: Scan,
 });
 
+function extractQrToken(input: string): string {
+  const match = input.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i);
+  return match ? match[0] : input.trim();
+}
+
 function Scan() {
   const [token, setToken] = useState("");
   const [busy, setBusy] = useState(false);
@@ -30,7 +35,7 @@ function Scan() {
   const lastScanRef = useRef("");
 
   const submit = async (value = token) => {
-    const clean = value.trim();
+    const clean = extractQrToken(value);
     if (!clean || busy) return;
     setBusy(true);
     setError(null);

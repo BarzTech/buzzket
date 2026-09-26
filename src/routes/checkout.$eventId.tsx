@@ -14,7 +14,7 @@ import { Separator } from "@/components/ui/separator";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Ticket } from "@/components/ticket";
 import { useEffect, useState } from "react";
-import { CheckCircle, ShieldCheck, Clock, AlertCircle, Loader2 } from "lucide-react";
+import { CheckCircle, ShieldCheck, Clock, AlertCircle, Loader2, Camera } from "lucide-react";
 
 export const Route = createFileRoute("/checkout/$eventId")({
   validateSearch: (search: Record<string, unknown>) => ({
@@ -186,31 +186,55 @@ function Checkout() {
 
   if (qrTokens) {
     return (
-      <div className="min-h-screen">
+      <div className="min-h-screen bg-background">
         <Navbar />
-        <div className="mx-auto max-w-3xl px-4 py-16 text-center">
-          <div className="mx-auto grid h-20 w-20 place-items-center rounded-full bg-primary/10">
-            <CheckCircle className="h-10 w-10 text-primary" />
+        <div className="mx-auto max-w-4xl px-4 py-16 text-center">
+          <div className="mx-auto grid h-16 w-16 place-items-center rounded-full bg-primary/10">
+            <CheckCircle className="h-9 w-9 text-primary" />
           </div>
-          <h2 className="mt-4 text-2xl font-bold">Booking Confirmed!</h2>
+          <h2 className="mt-4 text-3xl font-extrabold">Booking Confirmed!</h2>
           <p className="mt-2 text-muted-foreground">
             Your {qrTokens.length} ticket{qrTokens.length > 1 ? "s" : ""} for <strong>{event.title}</strong> {qrTokens.length > 1 ? "have" : "has"} been issued.
           </p>
+
+          {/* Screenshot Recommendation Prompt */}
+          <div className="mx-auto mt-6 max-w-2xl rounded-2xl border border-primary/25 bg-gradient-to-r from-primary/10 via-background to-primary/5 p-4 text-left shadow-sm">
+            <div className="flex items-start gap-3.5">
+              <div className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-primary text-primary-foreground shadow">
+                <Camera className="h-5 w-5" />
+              </div>
+              <div>
+                <h3 className="font-bold text-foreground text-sm md:text-base">
+                  Important: Screenshot Your Ticket!
+                </h3>
+                <p className="mt-0.5 text-xs md:text-sm text-muted-foreground leading-relaxed">
+                  We highly encourage taking a screenshot of your ticket now. Mobile connectivity at event gates can be slow, and saving a screenshot guarantees instant, offline entry.
+                </p>
+              </div>
+            </div>
+          </div>
+
           <div className="mt-8 space-y-6 text-left">
             {qrTokens.map((token, i) => (
               <Ticket
                 key={token}
                 eventTitle={event.title}
+                category={event.category}
                 date={event.date}
                 venue={event.venue}
+                city={event.city}
+                image={event.image}
                 tier={tier.name}
                 holder={contact.name || `Guest ${i + 1}`}
-                price={unitPrice}
+                price={discountedUnitPrice}
                 qrToken={token}
+                seat="GA"
+                row="N/A"
+                gate={/vip/i.test(tier.name) ? "VIP" : "MAIN"}
               />
             ))}
           </div>
-          <Button asChild className="mt-8 bg-primary text-primary-foreground">
+          <Button asChild className="mt-8 bg-primary text-primary-foreground font-semibold px-8">
             <Link to="/">Back to Home</Link>
           </Button>
         </div>

@@ -23,11 +23,15 @@ export type IssuedTicket = {
   event: {
     id: string;
     title: string;
+    category: string;
     date: string;
     venue: string;
     city: string;
     image: string;
   };
+  seat?: string;
+  row?: string;
+  gate?: string;
 };
 
 type TicketRow = {
@@ -48,6 +52,7 @@ type TicketRow = {
     event: {
       id: string;
       title: string;
+      category: string;
       date: string;
       venue: string;
       city: string;
@@ -83,6 +88,7 @@ async function getIssuedTicketsForOrder(orderId: string): Promise<IssuedTicket[]
         event:events!ticket_tiers_event_id_fkey (
           id,
           title,
+          category,
           date,
           venue,
           city,
@@ -96,26 +102,34 @@ async function getIssuedTicketsForOrder(orderId: string): Promise<IssuedTicket[]
 
   if (error) throw new Error(error.message);
 
-  return ((data ?? []) as unknown as TicketRow[]).map((row) => ({
-    id: row.id,
-    qrToken: row.qr_token,
-    status: row.status,
-    holder: row.holder_name,
-    tier: row.tier?.name ?? "General Admission",
-    price: row.tier?.price ?? 0,
-    orderId: row.order?.id ?? row.order_id,
-    orderTotal: row.order?.total ?? 0,
-    contactEmail: row.order?.contact_email ?? "",
-    contactPhone: row.order?.contact_phone ?? "",
-    event: {
-      id: row.tier?.event?.id ?? "",
-      title: row.tier?.event?.title ?? "Buzzket Event",
-      date: row.tier?.event?.date ?? new Date().toISOString(),
-      venue: row.tier?.event?.venue ?? "Confirmed venue",
-      city: row.tier?.event?.city ?? "",
-      image: row.tier?.event?.image ?? "",
-    },
-  }));
+  return ((data ?? []) as unknown as TicketRow[]).map((row) => {
+    const tierName = row.tier?.name ?? "General Admission";
+    const isVip = /vip/i.test(tierName);
+    return {
+      id: row.id,
+      qrToken: row.qr_token,
+      status: row.status,
+      holder: row.holder_name,
+      tier: tierName,
+      price: row.tier?.price ?? 0,
+      orderId: row.order?.id ?? row.order_id,
+      orderTotal: row.order?.total ?? 0,
+      contactEmail: row.order?.contact_email ?? "",
+      contactPhone: row.order?.contact_phone ?? "",
+      seat: "GA",
+      row: "N/A",
+      gate: isVip ? "VIP" : "MAIN",
+      event: {
+        id: row.tier?.event?.id ?? "",
+        title: row.tier?.event?.title ?? "Buzzket Event",
+        category: row.tier?.event?.category ?? "Event",
+        date: row.tier?.event?.date ?? new Date().toISOString(),
+        venue: row.tier?.event?.venue ?? "Confirmed venue",
+        city: row.tier?.event?.city ?? "",
+        image: row.tier?.event?.image ?? "",
+      },
+    };
+  });
 }
 
 async function sendTicketEmail(tickets: IssuedTicket[]): Promise<{ sent: boolean; message: string }> {
@@ -700,4 +714,115 @@ export const getEventImageBase64 = createServerFn({ method: "POST" })
       console.error("Error proxying event image:", e);
       return { base64: null, contentType: null };
     }
+  });
+
+export type TicketVerificationData = {
+  valid: boolean;
+  status: "valid" | "used" | "void" | "not_found";
+  ticketNumber: string;
+  holderName: string;
+  tierName: string;
+  price: number;
+  eventName: string;
+  category: string;
+  eventDate: string;
+  venue: string;
+  city: string;
+  image: string;
+  usedAt?: string | null;
+  seat: string;
+  row: string;
+  gate: string;
+};
+
+export const getTicketVerification = createServerFn({ method: "POST" })
+  .validator(z.object({ token: z.string().min(1) }))
+  .handler(async ({ data }): Promise<TicketVerificationData> => {
+    const supabase = getSupabaseAdmin();
+    if (!supabase) throw new Error("Supabase is not configured.");
+
+    const { data: ticket, error } = await supabase
+      .from("tickets")
+      .select(
+        `
+        id,
+        qr_token,
+        status,
+        holder_name,
+        used_at,
+        tier:ticket_tiers!tickets_tier_id_fkey (
+          name,
+          price,
+          event:events!ticket_tiers_event_id_fkey (
+            id,
+            title,
+            category,
+            date,
+            venue,
+            city,
+            image
+          )
+        )
+      `,
+      )
+      .eq("qr_token", data.token)
+      .maybeSingle();
+
+    if (error) throw new Error(error.message);
+
+    if (!ticket) {
+      return {
+        valid: false,
+        status: "not_found",
+        ticketNumber: "UNKNOWN",
+        holderName: "",
+        tierName: "",
+        price: 0,
+        eventName: "",
+        category: "EVENT",
+        eventDate: "",
+        venue: "",
+        city: "",
+        image: "",
+        seat: "GA",
+        row: "N/A",
+        gate: "MAIN",
+      };
+    }
+
+    const tier = ticket.tier as unknown as {
+      name: string;
+      price: number;
+      event: {
+        id: string;
+        title: string;
+        category: string;
+        date: string;
+        venue: string;
+        city: string;
+        image: string;
+      } | null;
+    } | null;
+
+    const isVip = /vip/i.test(tier?.name ?? "");
+    const cleanId = ticket.id.replace(/-/g, "").slice(0, 8).toUpperCase();
+
+    return {
+      valid: ticket.status === "valid",
+      status: ticket.status as "valid" | "used" | "void",
+      ticketNumber: `BZK-${cleanId}`,
+      holderName: ticket.holder_name || "Guest",
+      tierName: tier?.name ?? "General Admission",
+      price: tier?.price ?? 0,
+      eventName: tier?.event?.title ?? "Buzzket Event",
+      category: tier?.event?.category ?? "EVENT",
+      eventDate: tier?.event?.date ?? new Date().toISOString(),
+      venue: tier?.event?.venue ?? "Confirmed Venue",
+      city: tier?.event?.city ?? "",
+      image: tier?.event?.image ?? "",
+      usedAt: ticket.used_at,
+      seat: "GA",
+      row: "N/A",
+      gate: isVip ? "VIP" : "MAIN",
+    };
   });
