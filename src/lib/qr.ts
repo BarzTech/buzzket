@@ -5,10 +5,16 @@ import QRCode from "qrcode";
 // token is the QR payload; the scanner resolves it back to a ticket.
 
 const QR_OPTS = { errorCorrectionLevel: "M" as const, margin: 1, width: 320 };
+const QR_HIGH_RES_OPTS = { errorCorrectionLevel: "M" as const, margin: 2, width: 640 };
 
 // PNG data URL — convenient for <img src> and direct download.
 export function tokenToDataUrl(token: string): Promise<string> {
   return QRCode.toDataURL(token, QR_OPTS);
+}
+
+// High-DPI PNG data URL for print and sharp PDF embedding.
+export function tokenToHighResDataUrl(token: string): Promise<string> {
+  return QRCode.toDataURL(token, QR_HIGH_RES_OPTS);
 }
 
 // Crisp scalable SVG markup — good for print / high-DPI rendering.

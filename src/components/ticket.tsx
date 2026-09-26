@@ -17,9 +17,6 @@ type TicketProps = {
   price: number;
   /** Cryptographic QR token issued when the order is paid. */
   qrToken?: string;
-  seat?: string;
-  row?: string;
-  gate?: string;
   issuedTicket?: IssuedTicket;
 };
 
@@ -34,9 +31,6 @@ export function Ticket({
   holder: propHolder,
   price: propPrice,
   qrToken: propQrToken,
-  seat: propSeat,
-  row: propRow,
-  gate: propGate,
   issuedTicket,
 }: TicketProps) {
   // Prefer values from issuedTicket if provided
@@ -50,9 +44,6 @@ export function Ticket({
   const holder = issuedTicket?.holder ?? propHolder;
   const price = issuedTicket?.price ?? propPrice;
   const qrToken = issuedTicket?.qrToken ?? propQrToken;
-  const seat = (issuedTicket?.seat ?? propSeat ?? "GA").toUpperCase();
-  const row = (issuedTicket?.row ?? propRow ?? "N/A").toUpperCase();
-  const gate = (issuedTicket?.gate ?? propGate ?? (/vip/i.test(tier) ? "VIP" : "MAIN")).toUpperCase();
 
   const [qrUrl, setQrUrl] = useState<string | null>(null);
   const [pdfBusy, setPdfBusy] = useState(false);
@@ -110,7 +101,7 @@ export function Ticket({
     <div className="w-full max-w-4xl mx-auto space-y-3">
       {/* Landscape Ticket Container (approximating 2.905:1 aspect ratio) */}
       <div className="relative flex w-full overflow-hidden rounded-2xl bg-card shadow-2xl ring-1 ring-black/10 min-h-[220px] md:min-h-[270px]">
-        {/* A. MAIN TICKET AREA (~78-80% width) */}
+        {/* A. MAIN TICKET AREA (~78% width) */}
         <div className="relative flex-1 flex flex-col justify-between p-4 md:p-6 text-white overflow-hidden">
           {/* Background image covering main ticket */}
           {image ? (
@@ -142,46 +133,34 @@ export function Ticket({
               </div>
             </div>
 
-            {/* Bottom area: Info Boxes & QR Code */}
-            <div className="flex flex-wrap items-center gap-2 md:gap-3 pt-2">
+            {/* Bottom area: Balanced Info Boxes */}
+            <div className="flex flex-wrap items-center gap-2 md:gap-4 pt-2">
               {/* Location Box */}
-              <div className="rounded-lg border border-white/35 bg-black/50 px-2.5 py-1.5 md:px-3 md:py-2 backdrop-blur-sm">
-                <div className="text-[9px] md:text-[11px] font-bold text-white uppercase truncate max-w-[130px] md:max-w-[170px]">
+              <div className="rounded-lg border border-white/35 bg-black/50 px-3 py-2 backdrop-blur-sm flex-1 min-w-[130px]">
+                <div className="text-[10px] md:text-xs font-bold text-white uppercase truncate">
                   {venue}
                 </div>
-                <div className="text-[8px] md:text-[9px] font-medium text-white/75 uppercase truncate max-w-[130px] md:max-w-[170px]">
+                <div className="text-[8px] md:text-[10px] font-medium text-white/75 uppercase truncate mt-0.5">
                   {city ? `${city}, UGANDA` : "UGANDA"}
                 </div>
               </div>
 
               {/* Time Box */}
-              <div className="rounded-lg border border-white/35 bg-black/50 px-2.5 py-1.5 md:px-3 md:py-2 backdrop-blur-sm shrink-0 flex items-center justify-center">
-                <div className="text-[9px] md:text-[11px] font-bold text-white uppercase">
+              <div className="rounded-lg border border-white/35 bg-black/50 px-3 py-2 backdrop-blur-sm shrink-0">
+                <div className="text-[8px] md:text-[9px] font-bold uppercase text-white/70">
+                  TIME
+                </div>
+                <div className="text-[10px] md:text-xs font-bold text-white uppercase mt-0.5">
                   {formatTicketTime(date)}
                 </div>
               </div>
 
-              {/* Scannable QR Code */}
-              <div className="rounded-lg bg-white p-1 shrink-0 flex items-center justify-center shadow-md">
-                {qrUrl ? (
-                  <img
-                    src={qrUrl}
-                    alt={`QR Code ${ticketCode}`}
-                    className="h-10 w-10 md:h-14 md:w-14 object-contain"
-                  />
-                ) : qrToken ? (
-                  <Loader2 className="h-10 w-10 md:h-14 md:w-14 animate-spin text-zinc-600 p-2" />
-                ) : (
-                  <QrCode className="h-10 w-10 md:h-14 md:w-14 text-zinc-700 p-1" />
-                )}
-              </div>
-
               {/* Price Box */}
-              <div className="rounded-lg border border-white/35 bg-black/50 px-2.5 py-1.5 md:px-3 md:py-2 backdrop-blur-sm shrink-0 min-w-[90px] md:min-w-[140px]">
+              <div className="rounded-lg border border-white/35 bg-black/50 px-3 py-2 backdrop-blur-sm shrink-0 min-w-[110px] md:min-w-[160px]">
                 <div className="text-[8px] md:text-[9px] font-bold uppercase text-white/70">
                   PRICE:
                 </div>
-                <div className="text-xs md:text-base font-extrabold text-white">
+                <div className="text-xs md:text-base font-extrabold text-white leading-tight">
                   {formatUGX(price)}
                 </div>
               </div>
@@ -199,43 +178,42 @@ export function Ticket({
           <div className="absolute -bottom-3.5 -translate-x-1/2 w-7 h-7 rounded-full bg-background ring-1 ring-black/5" />
         </div>
 
-        {/* C. RIGHT-HAND TICKET STUB (~20-22% width) */}
-        <div className="w-[30%] md:w-[22%] bg-[#f7eae6] text-[#2c1b18] relative flex flex-col justify-between p-3 md:p-5 select-none shrink-0">
-          {/* Rotated Ticket Number on Left Edge of Stub */}
-          <div className="absolute left-1.5 md:left-2 bottom-5 origin-bottom-left -rotate-90 text-[7px] md:text-[8.5px] font-mono font-bold tracking-widest text-[#69524c] uppercase whitespace-nowrap">
-            TICKET NUMBER: {ticketCode}
+        {/* C. RIGHT-HAND TICKET STUB (~22% width) - Entry / QR Scanning Section */}
+        <div className="w-[32%] md:w-[22%] bg-[#f7eae6] text-[#2c1b18] relative flex flex-col items-center justify-between p-2.5 md:p-4 select-none shrink-0">
+          {/* Top Buzzket Branding */}
+          <div className="text-[9px] md:text-[11px] font-black uppercase tracking-widest text-[#4a3632]">
+            BUZZKET
           </div>
 
-          {/* Seat, Row, Gate Fields */}
-          <div className="flex flex-col justify-between h-full pl-3.5 md:pl-5 space-y-2 md:space-y-4">
-            {/* SEAT */}
-            <div>
-              <div className="text-[8px] md:text-[10px] font-bold uppercase tracking-wider text-[#69524c]">
-                SEAT
-              </div>
-              <div className="text-base md:text-3xl font-black text-[#1f1210] leading-none mt-0.5">
-                {seat}
-              </div>
+          {/* Large Centered Scannable QR Code */}
+          <div className="flex flex-col items-center my-auto">
+            <div className="rounded-xl bg-white p-2 md:p-3 shadow-md border border-[#e5d4cf] flex items-center justify-center">
+              {qrUrl ? (
+                <img
+                  src={qrUrl}
+                  alt={`QR Code ${ticketCode}`}
+                  className="h-20 w-20 md:h-28 md:w-28 object-contain"
+                />
+              ) : qrToken ? (
+                <Loader2 className="h-20 w-20 md:h-28 md:w-28 animate-spin text-zinc-500 p-4" />
+              ) : (
+                <QrCode className="h-20 w-20 md:h-28 md:w-28 text-zinc-700 p-2" />
+              )}
             </div>
 
-            {/* ROW */}
-            <div>
-              <div className="text-[8px] md:text-[10px] font-bold uppercase tracking-wider text-[#69524c]">
-                ROW
-              </div>
-              <div className="text-base md:text-3xl font-black text-[#1f1210] leading-none mt-0.5">
-                {row}
-              </div>
+            {/* SCAN TO ENTER Label */}
+            <div className="text-[8px] md:text-[9px] font-extrabold uppercase tracking-widest text-[#5c4742] mt-2">
+              SCAN TO ENTER
             </div>
+          </div>
 
-            {/* GATE */}
-            <div>
-              <div className="text-[8px] md:text-[10px] font-bold uppercase tracking-wider text-[#69524c]">
-                GATE
-              </div>
-              <div className="text-base md:text-3xl font-black text-[#1f1210] leading-none mt-0.5">
-                {gate}
-              </div>
+          {/* Bottom Ticket Identifier */}
+          <div className="text-center">
+            <div className="text-[7px] md:text-[8px] font-bold uppercase tracking-wider text-[#69524c]">
+              TICKET NUMBER
+            </div>
+            <div className="text-[9px] md:text-[11px] font-mono font-bold text-[#1f1210] tracking-wider">
+              {ticketCode}
             </div>
           </div>
         </div>

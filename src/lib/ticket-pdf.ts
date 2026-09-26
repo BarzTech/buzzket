@@ -1,7 +1,7 @@
 import { PDFDocument, StandardFonts, rgb, degrees } from "pdf-lib";
 
 import { formatTicketDate, formatTicketTime, formatTicketNumber, formatUGX } from "./format";
-import { tokenToDataUrl } from "./qr";
+import { tokenToDataUrl, tokenToHighResDataUrl } from "./qr";
 import type { IssuedTicket } from "./data/tickets";
 import { getEventImageBase64 } from "./data/tickets";
 
@@ -167,7 +167,7 @@ export async function renderTicketPage(pdf: PDFDocument, ticket: IssuedTicket) {
   const boxHeight = 52;
 
   // Box 1: Location / Venue Box
-  const locBoxWidth = 145;
+  const locBoxWidth = 205;
   page.drawRectangle({
     x: 36,
     y: boxY,
@@ -181,25 +181,25 @@ export async function renderTicketPage(pdf: PDFDocument, ticket: IssuedTicket) {
 
   const venueUpper = (ticket.event.venue || "VENUE").toUpperCase();
   const cityUpper = (ticket.event.city ? `${ticket.event.city}, UGANDA` : "UGANDA").toUpperCase();
-  page.drawText(venueUpper.length > 20 ? venueUpper.slice(0, 18) + "..." : venueUpper, {
-    x: 44,
+  page.drawText(venueUpper.length > 28 ? venueUpper.slice(0, 25) + "..." : venueUpper, {
+    x: 46,
     y: boxY + 28,
-    size: 8.5,
+    size: 9,
     font: bold,
     color: rgb(1, 1, 1),
   });
-  page.drawText(cityUpper.length > 22 ? cityUpper.slice(0, 20) + "..." : cityUpper, {
-    x: 44,
+  page.drawText(cityUpper.length > 30 ? cityUpper.slice(0, 27) + "..." : cityUpper, {
+    x: 46,
     y: boxY + 12,
-    size: 7.5,
+    size: 8,
     font,
     color: rgb(0.85, 0.85, 0.85),
   });
 
   // Box 2: Time Box
-  const timeBoxWidth = 95;
+  const timeBoxWidth = 110;
   page.drawRectangle({
-    x: 189,
+    x: 253,
     y: boxY,
     width: timeBoxWidth,
     height: boxHeight,
@@ -209,46 +209,25 @@ export async function renderTicketPage(pdf: PDFDocument, ticket: IssuedTicket) {
     borderWidth: 1,
   });
 
+  page.drawText("TIME", {
+    x: 265,
+    y: boxY + 30,
+    size: 7.5,
+    font: bold,
+    color: rgb(0.8, 0.8, 0.85),
+  });
   const timeText = formatTicketTime(ticket.event.date);
   page.drawText(timeText, {
-    x: 198,
-    y: boxY + 20,
-    size: 10,
+    x: 265,
+    y: boxY + 14,
+    size: 9.5,
     font: bold,
     color: rgb(1, 1, 1),
   });
 
-  // Box 3: QR Code (Replacing barcode)
-  const qrX = 292;
-  const qrSize = 64;
-  // White quiet zone container
-  page.drawRectangle({
-    x: qrX,
-    y: boxY - 6,
-    width: qrSize,
-    height: qrSize,
-    color: rgb(1, 1, 1),
-  });
-
-  try {
-    const origin = typeof window !== "undefined" ? window.location.origin : "https://buzzket.app";
-    const verificationUrl = `${origin}/tickets/verify/${ticket.qrToken}`;
-    const qrDataUrl = await tokenToDataUrl(verificationUrl);
-    const qrBytes = Uint8Array.from(atob(qrDataUrl.split(",")[1] ?? ""), (char) => char.charCodeAt(0));
-    const qrImage = await pdf.embedPng(qrBytes);
-    page.drawImage(qrImage, {
-      x: qrX + 2,
-      y: boxY - 4,
-      width: qrSize - 4,
-      height: qrSize - 4,
-    });
-  } catch (err) {
-    console.warn("Could not embed QR code into PDF:", err);
-  }
-
-  // Box 4: Price Box
-  const priceBoxX = 364;
-  const priceBoxWidth = 260;
+  // Box 3: Price Box
+  const priceBoxX = 375;
+  const priceBoxWidth = 237;
   page.drawRectangle({
     x: priceBoxX,
     y: boxY,
@@ -262,14 +241,14 @@ export async function renderTicketPage(pdf: PDFDocument, ticket: IssuedTicket) {
 
   const formattedPrice = formatUGX(ticket.price);
   page.drawText("PRICE:", {
-    x: priceBoxX + 12,
+    x: priceBoxX + 14,
     y: boxY + 30,
     size: 8,
     font: bold,
     color: rgb(0.8, 0.8, 0.85),
   });
   page.drawText(formattedPrice, {
-    x: priceBoxX + 12,
+    x: priceBoxX + 14,
     y: boxY + 14,
     size: 13,
     font: bold,
@@ -278,14 +257,14 @@ export async function renderTicketPage(pdf: PDFDocument, ticket: IssuedTicket) {
 
   const tierText = (ticket.tier || "General Admission").toUpperCase();
   page.drawText(tierText.length > 18 ? tierText.slice(0, 16) + "..." : tierText, {
-    x: priceBoxX + 130,
+    x: priceBoxX + 120,
     y: boxY + 22,
-    size: 8.5,
+    size: 9,
     font: bold,
     color: rgb(0.9, 0.9, 0.9),
   });
 
-  // 2. RIGHT-HAND TICKET STUB (stubX to pageWidth)
+  // 2. RIGHT-HAND TICKET STUB (stubX to pageWidth) - Scanning / Entry Section
   // Blush / pale pink background
   page.drawRectangle({
     x: stubX,
@@ -321,67 +300,70 @@ export async function renderTicketPage(pdf: PDFDocument, ticket: IssuedTicket) {
     color: rgb(1, 1, 1),
   });
 
-  // 2.2 Vertically rotated ticket number along left edge of stub
+  // 2.2 Top Buzzket Branding
+  page.drawText("BUZZKET", {
+    x: 711,
+    y: 254,
+    size: 11,
+    font: bold,
+    color: rgb(0.40, 0.30, 0.28),
+  });
+
+  // 2.3 Large Prominent Centered QR Code
+  const qrCardWidth = 132;
+  const qrCardX = stubX + (stubWidth - qrCardWidth) / 2; // 672
+  const qrCardY = 104;
+
+  // Crisp white quiet-zone background card
+  page.drawRectangle({
+    x: qrCardX,
+    y: qrCardY,
+    width: qrCardWidth,
+    height: qrCardWidth,
+    color: rgb(1, 1, 1),
+    borderColor: rgb(0.86, 0.78, 0.76),
+    borderWidth: 1,
+  });
+
+  try {
+    const origin = typeof window !== "undefined" ? window.location.origin : "https://buzzket.app";
+    const verificationUrl = `${origin}/tickets/verify/${ticket.qrToken}`;
+    const qrDataUrl = await tokenToHighResDataUrl(verificationUrl);
+    const qrBytes = Uint8Array.from(atob(qrDataUrl.split(",")[1] ?? ""), (char) => char.charCodeAt(0));
+    const qrImage = await pdf.embedPng(qrBytes);
+    const qrSize = 120;
+    page.drawImage(qrImage, {
+      x: qrCardX + 6,
+      y: qrCardY + 6,
+      width: qrSize,
+      height: qrSize,
+    });
+  } catch (err) {
+    console.warn("Could not embed QR code into PDF stub:", err);
+  }
+
+  // 2.4 SCAN TO ENTER Label
+  page.drawText("SCAN TO ENTER", {
+    x: 701,
+    y: 86,
+    size: 8.5,
+    font: bold,
+    color: rgb(0.48, 0.38, 0.35),
+  });
+
+  // 2.5 Ticket Number
   const ticketNumber = formatTicketNumber(ticket.id, ticket.qrToken);
-  page.drawText(`TICKET NUMBER: ${ticketNumber}`, {
-    x: stubX + 22,
-    y: 35,
-    size: 7.5,
+  page.drawText("TICKET NUMBER", {
+    x: 707,
+    y: 56,
+    size: 7,
     font: bold,
-    color: rgb(0.48, 0.40, 0.38),
-    rotate: degrees(90),
+    color: rgb(0.55, 0.46, 0.43),
   });
-
-  // 2.3 Stub values: SEAT, ROW, GATE (Small label, large bold numbers, generous vertical spacing)
-  const stubContentX = stubX + 44;
-
-  // SEAT
-  page.drawText("SEAT", {
-    x: stubContentX,
-    y: 238,
-    size: 8,
-    font: bold,
-    color: rgb(0.52, 0.42, 0.40),
-  });
-  const seatVal = (ticket.seat || "GA").toUpperCase();
-  page.drawText(seatVal, {
-    x: stubContentX,
-    y: 206,
-    size: 24,
-    font: bold,
-    color: rgb(0.18, 0.12, 0.12),
-  });
-
-  // ROW
-  page.drawText("ROW", {
-    x: stubContentX,
-    y: 164,
-    size: 8,
-    font: bold,
-    color: rgb(0.52, 0.42, 0.40),
-  });
-  const rowVal = (ticket.row || "N/A").toUpperCase();
-  page.drawText(rowVal, {
-    x: stubContentX,
-    y: 132,
-    size: 24,
-    font: bold,
-    color: rgb(0.18, 0.12, 0.12),
-  });
-
-  // GATE
-  page.drawText("GATE", {
-    x: stubContentX,
-    y: 90,
-    size: 8,
-    font: bold,
-    color: rgb(0.52, 0.42, 0.40),
-  });
-  const gateVal = (ticket.gate || (/vip/i.test(ticket.tier) ? "VIP" : "MAIN")).toUpperCase();
-  page.drawText(gateVal, {
-    x: stubContentX,
-    y: 58,
-    size: 24,
+  page.drawText(ticketNumber, {
+    x: 700,
+    y: 40,
+    size: 9.5,
     font: bold,
     color: rgb(0.18, 0.12, 0.12),
   });

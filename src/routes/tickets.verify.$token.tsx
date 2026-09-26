@@ -107,22 +107,6 @@ function TicketVerifyPage() {
                 </div>
               </div>
 
-              {/* Stub Fields Grid */}
-              <div className="grid grid-cols-3 gap-3 rounded-2xl bg-muted/40 p-3 text-center border">
-                <div>
-                  <div className="text-[10px] font-bold uppercase text-muted-foreground">SEAT</div>
-                  <div className="text-lg font-black text-foreground mt-0.5">{verification.seat}</div>
-                </div>
-                <div>
-                  <div className="text-[10px] font-bold uppercase text-muted-foreground">ROW</div>
-                  <div className="text-lg font-black text-foreground mt-0.5">{verification.row}</div>
-                </div>
-                <div>
-                  <div className="text-[10px] font-bold uppercase text-muted-foreground">GATE</div>
-                  <div className="text-lg font-black text-foreground mt-0.5">{verification.gate}</div>
-                </div>
-              </div>
-
               {/* Attendee & Order Details */}
               <div className="space-y-3 divide-y divide-border/60 text-xs">
                 <div className="flex justify-between pt-2">

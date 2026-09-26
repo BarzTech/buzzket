@@ -228,9 +228,6 @@ function Checkout() {
                 holder={contact.name || `Guest ${i + 1}`}
                 price={discountedUnitPrice}
                 qrToken={token}
-                seat="GA"
-                row="N/A"
-                gate={/vip/i.test(tier.name) ? "VIP" : "MAIN"}
               />
             ))}
           </div>

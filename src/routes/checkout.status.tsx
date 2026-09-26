@@ -221,9 +221,6 @@ function CheckoutStatus() {
                   holder={ticket.holder}
                   price={ticket.price}
                   qrToken={ticket.qrToken}
-                  seat={ticket.seat}
-                  row={ticket.row}
-                  gate={ticket.gate}
                   issuedTicket={ticket}
                 />
               ))}
