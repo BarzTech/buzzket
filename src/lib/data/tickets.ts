@@ -8,6 +8,9 @@ import {
   assertPlatformOperational,
   fetchPlatformSettings,
 } from "./platform";
+import { generateTicketPdfBytes, sanitizeTicketFilename } from "../ticket-pdf";
+import { sendTwilioSms, buildApprovalSms } from "../sms/twilio";
+import { getMobileMoneyConfig } from "../payments/manual-momo";
 
 export type IssuedTicket = {
   id: string;
@@ -61,7 +64,7 @@ type TicketRow = {
   } | null;
 };
 
-async function getIssuedTicketsForOrder(orderId: string): Promise<IssuedTicket[]> {
+export async function getIssuedTicketsForOrder(orderId: string): Promise<IssuedTicket[]> {
   const supabase = getSupabaseAdmin();
   if (!supabase) {
     throw new Error("Ticket lookup requires Supabase server credentials.");
@@ -132,15 +135,12 @@ async function getIssuedTicketsForOrder(orderId: string): Promise<IssuedTicket[]
   });
 }
 
-async function sendTicketEmail(tickets: IssuedTicket[]): Promise<{ sent: boolean; message: string }> {
-  const apiKey = process.env.RESEND_API_KEY;
-  const from = process.env.TICKET_EMAIL_FROM;
+export async function sendTicketEmail(tickets: IssuedTicket[]): Promise<{ sent: boolean; message: string }> {
   const to = tickets[0]?.contactEmail;
-
   if (!to) return { sent: false, message: "No customer email was provided." };
-  if (!apiKey || !from) {
-    return { sent: false, message: "Ticket email is not configured. Add RESEND_API_KEY and TICKET_EMAIL_FROM." };
-  }
+
+  const apiKey = process.env.RESEND_API_KEY;
+  const from = process.env.TICKET_EMAIL_FROM || "Buzzket <tickets@buzzket.com>";
 
   const settings = await fetchPlatformSettings();
   const first = tickets[0];
@@ -181,9 +181,39 @@ async function sendTicketEmail(tickets: IssuedTicket[]): Promise<{ sent: boolean
         </thead>
         <tbody>${ticketRows}</tbody>
       </table>
-      <p style="margin-top:20px;color:#4b5563;">Open the confirmation page after payment to download the full PDF ticket. The QR token above is the same code scanned at the gate.</p>
+      <p style="margin-top:20px;color:#4b5563;">Your official tickets are attached to this email as a PDF. Present the QR code on the attached ticket at the gate for entry.</p>
     </div>
   `;
+
+  if (!apiKey) {
+    console.info(`[Resend Email Preview] To: ${to} | Subject: "${subject}" | (API Key missing)`);
+    return { sent: false, message: "Email service not configured. Add RESEND_API_KEY to enable delivery." };
+  }
+
+  // Generate landscape PDF attachment
+  let attachments: Array<{ filename: string; content: string }> | undefined;
+  try {
+    const pdfBytes = await generateTicketPdfBytes(tickets);
+    const filename = sanitizeTicketFilename(first.event.title, `Order-${first.orderId.slice(0, 8)}`);
+    attachments = [
+      {
+        filename: filename.endsWith(".pdf") ? filename : `${filename}.pdf`,
+        content: Buffer.from(pdfBytes).toString("base64"),
+      },
+    ];
+  } catch (pdfErr) {
+    console.error("Failed to generate PDF attachment for email:", pdfErr);
+  }
+
+  const payload: Record<string, unknown> = {
+    from,
+    to,
+    subject,
+    html,
+  };
+  if (attachments && attachments.length > 0) {
+    payload.attachments = attachments;
+  }
 
   const res = await fetch("https://api.resend.com/emails", {
     method: "POST",
@@ -191,12 +221,7 @@ async function sendTicketEmail(tickets: IssuedTicket[]): Promise<{ sent: boolean
       Authorization: `Bearer ${apiKey}`,
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({
-      from,
-      to,
-      subject,
-      html,
-    }),
+    body: JSON.stringify(payload),
   });
 
   if (!res.ok) {
@@ -204,47 +229,107 @@ async function sendTicketEmail(tickets: IssuedTicket[]): Promise<{ sent: boolean
     return { sent: false, message: `Ticket email failed: ${res.status} ${text}` };
   }
 
-  return { sent: true, message: "Ticket email sent." };
+  return { sent: true, message: "Ticket email sent with PDF attachment." };
 }
 
-async function sendTicketSms(tickets: IssuedTicket[]): Promise<{ sent: boolean; message: string }> {
-  const phone = tickets[0]?.contactPhone?.replace(/\D/g, "");
-  if (!phone || phone.length < 9) {
-    return { sent: false, message: "No customer phone number was provided." };
+export async function sendRejectionEmail({
+  to,
+  recipientName,
+  eventTitle,
+  orderId,
+  reason,
+}: {
+  to: string;
+  recipientName: string;
+  eventTitle: string;
+  orderId: string;
+  reason: string;
+}): Promise<{ sent: boolean; message: string }> {
+  if (!to) return { sent: false, message: "No customer email provided." };
+  const apiKey = process.env.RESEND_API_KEY;
+  const from = process.env.TICKET_EMAIL_FROM || "Buzzket Support <support@buzzket.com>";
+  const subject = `Payment Verification Update: ${eventTitle} (Ref: ${orderId.slice(0, 8)})`;
+  const html = `
+    <div style="font-family:Arial,sans-serif;color:#111827;line-height:1.5;">
+      <h2 style="color:#b91c1c;">Payment Verification Notice</h2>
+      <p>Hello ${recipientName || "there"},</p>
+      <p>We were unable to verify your mobile-money payment for <strong>${eventTitle}</strong>.</p>
+      <div style="background:#fee2e2;border:1px solid #f87171;padding:12px 16px;border-radius:8px;margin:16px 0;">
+        <strong>Reason:</strong> ${reason}
+      </div>
+      <p><strong>Order Reference:</strong> ${orderId}</p>
+      <p>If you believe this is an error or if you need assistance, please reply to this email or contact Buzzket support with your mobile-money transaction receipt.</p>
+    </div>
+  `;
+
+  if (!apiKey) {
+    console.info(`[Resend Rejection Email Preview] To: ${to} | Subject: "${subject}"`);
+    return { sent: false, message: "Resend API key not configured." };
   }
 
-  const settings = await fetchPlatformSettings();
-  const first = tickets[0];
-  const message = applyNotificationTemplate(settings.smsTemplate, {
-    eventName: first.event.title,
-    userName: first.holder || "there",
-    ticketTier: first.tier,
-  });
-
-  const smsUrl = process.env.SMS_WEBHOOK_URL;
-  if (!smsUrl) {
-    console.info("[Buzzket SMS preview]", phone, message);
-    return { sent: false, message: "SMS notifications are not configured. Add SMS_WEBHOOK_URL to enable delivery." };
-  }
-
-  const res = await fetch(smsUrl, {
+  const res = await fetch("https://api.resend.com/emails", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ to: phone, message }),
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ from, to, subject, html }),
   });
 
   if (!res.ok) {
     const text = await res.text();
-    return { sent: false, message: `SMS notification failed: ${res.status} ${text}` };
+    return { sent: false, message: `Rejection email failed: ${res.status} ${text}` };
   }
 
-  return { sent: true, message: "SMS notification sent." };
+  return { sent: true, message: "Rejection email sent." };
 }
 
-async function sendTicketNotifications(tickets: IssuedTicket[]) {
+export async function sendTicketSms(tickets: IssuedTicket[]): Promise<{ sent: boolean; message: string }> {
+  const phone = tickets[0]?.contactPhone;
+  if (!phone || phone.replace(/\D/g, "").length < 9) {
+    return { sent: false, message: "No valid customer phone number was provided." };
+  }
+
+  const first = tickets[0];
+  const smsBody = buildApprovalSms(
+    first.event.title,
+    tickets.length,
+    first.tier,
+    first.orderId,
+    first.contactEmail,
+  );
+
+  const twilioRes = await sendTwilioSms({ to: phone, message: smsBody });
+  if (twilioRes.sent) {
+    return { sent: true, message: "Twilio SMS notification sent." };
+  }
+
+  // Fallback to legacy SMS webhook if configured
+  const smsUrl = process.env.SMS_WEBHOOK_URL;
+  if (smsUrl) {
+    try {
+      const res = await fetch(smsUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ to: phone, message: smsBody }),
+      });
+      if (res.ok) return { sent: true, message: "SMS notification sent via webhook." };
+    } catch {
+      // Ignore webhook fallback error
+    }
+  }
+
+  return {
+    sent: false,
+    message: twilioRes.error || "SMS delivery could not be completed.",
+  };
+}
+
+export async function sendTicketNotifications(tickets: IssuedTicket[]) {
   const [email, sms] = await Promise.all([sendTicketEmail(tickets), sendTicketSms(tickets)]);
   return { email, sms };
 }
+
 
 // --- Reserve (10-min hold, concurrency-safe via reserve_tickets RPC) ----------
 
@@ -306,6 +391,138 @@ export const confirmOrder = createServerFn({ method: "POST" })
 export const getOrderTickets = createServerFn({ method: "POST" })
   .validator(z.object({ orderId: z.string().min(1) }))
   .handler(async ({ data }) => getIssuedTicketsForOrder(data.orderId));
+
+// --- Manual Mobile Money (MTN & Airtel) ---------------------------------------
+
+export const submitManualMomoOrder = createServerFn({ method: "POST" })
+  .validator(
+    z.object({
+      reservationId: z.string().min(1),
+      network: z.enum(["mtn", "airtel"]),
+      transactionId: z.string().min(3, "Transaction reference / ID is required"),
+      contactName: z.string().min(1, "Name is required"),
+      contactEmail: z.string().email("A valid email address is required"),
+      contactPhone: z.string().min(8, "Phone number is required"),
+      qty: z.number().int().positive(),
+      unitPrice: z.number().int().nonnegative(),
+      amount: z.number().positive(),
+    }),
+  )
+  .handler(async ({ data }) => {
+    await assertPlatformOperational();
+    const supabase = getSupabaseAdmin();
+    if (!supabase) {
+      throw new Error("Supabase server client is not configured.");
+    }
+
+    const trimmedTx = data.transactionId.trim();
+
+    // Prevent duplicate transaction ID abuse if already verified on another order
+    const { data: existingApproved } = await supabase
+      .from("orders")
+      .select("id, status")
+      .ilike("transaction_id", trimmedTx)
+      .in("status", ["paid", "payment_approved"])
+      .maybeSingle();
+
+    if (existingApproved) {
+      throw new Error(
+        "This Transaction ID has already been approved for another order. Please verify your mobile money receipt or contact support.",
+      );
+    }
+
+    const config = getMobileMoneyConfig(data.network, data.amount);
+
+    const { data: rows, error } = await supabase.rpc("submit_manual_payment", {
+      p_reservation_id: data.reservationId,
+      p_contact_name: data.contactName.trim(),
+      p_contact_email: data.contactEmail.trim().toLowerCase(),
+      p_contact_phone: data.contactPhone.trim(),
+      p_payment_method: data.network === "mtn" ? "MTN Mobile Money" : "Airtel Money",
+      p_payment_provider: "manual_momo",
+      p_transaction_id: trimmedTx,
+      p_merchant_code: config.merchantCode,
+      p_unit_price: data.unitPrice,
+    });
+
+    if (error) {
+      console.error("submit_manual_payment error:", error);
+      throw new Error(error.message);
+    }
+
+    const row = rows?.[0];
+    if (!row) throw new Error("Could not process order submission.");
+
+    return { orderId: row.order_id };
+  });
+
+export const getManualOrderStatus = createServerFn({ method: "POST" })
+  .validator(z.object({ orderId: z.string().min(1) }))
+  .handler(async ({ data }) => {
+    const supabase = getSupabaseAdmin();
+    if (!supabase) throw new Error("Supabase is not configured.");
+
+    const { data: order, error } = await supabase
+      .from("orders")
+      .select(`
+        id,
+        event_id,
+        status,
+        contact_name,
+        contact_email,
+        contact_phone,
+        payment_method,
+        payment_provider,
+        transaction_id,
+        merchant_code,
+        subtotal,
+        fees,
+        total,
+        created_at,
+        paid_at,
+        rejection_reason,
+        event:events (
+          id,
+          title,
+          category,
+          date,
+          venue,
+          city,
+          image
+        ),
+        order_items (
+          quantity,
+          unit_price,
+          tier:ticket_tiers (
+            id,
+            name
+          )
+        )
+      `)
+      .eq("id", data.orderId)
+      .single();
+
+    if (error || !order) {
+      throw new Error(`Order not found: ${error?.message || ""}`);
+    }
+
+    const isPaid = order.status === "paid" || order.status === "payment_approved";
+    let tickets: IssuedTicket[] | null = null;
+    if (isPaid) {
+      tickets = await getIssuedTicketsForOrder(order.id);
+    }
+
+    return {
+      order,
+      tickets,
+      isPaid,
+      isPending:
+        order.status === "payment_submitted" ||
+        order.status === "pending" ||
+        order.status === "pending_payment",
+      isRejected: order.status === "payment_rejected",
+    };
+  });
 
 // --- Scan / check-in ----------------------------------------------------------
 

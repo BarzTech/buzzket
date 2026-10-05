@@ -27,6 +27,15 @@ import {
   CalendarCheck,
   Wallet,
   PiggyBank,
+  Smartphone,
+  Copy,
+  Check,
+  Search,
+  AlertOctagon,
+  Send,
+  FileText,
+  CheckCircle,
+  ShieldCheck,
 } from "lucide-react";
 
 import { formatUGX } from "@/lib/format";
@@ -42,6 +51,10 @@ import {
   updateOrganizerStatus,
   getPlatformSettings,
   updatePlatformSettings,
+  getAdminPaymentVerifications,
+  approveAdminPayment,
+  rejectAdminPayment,
+  resendAdminTicketNotifications,
   type Payout,
   type PayoutStatus,
   type OrganizerRow,
@@ -49,6 +62,7 @@ import {
   type AdminStats,
   type AdminEvent,
   type PlatformSettings,
+  type ManualVerificationItem,
 } from "@/lib/data/admin";
 import {
   getCommissionSettings,
@@ -143,10 +157,11 @@ function StatCard({
 
 // ─── Tab types ─────────────────────────────────────────────────────────────────
 
-type Tab = "overview" | "events" | "payouts" | "organizers" | "orders" | "promos" | "settings";
+type Tab = "overview" | "payments" | "events" | "payouts" | "organizers" | "orders" | "promos" | "settings";
 
 const TABS: { id: Tab; label: string; icon: React.ReactNode }[] = [
   { id: "overview", label: "Overview", icon: <LayoutDashboard className="h-4 w-4" /> },
+  { id: "payments", label: "Payment Verification", icon: <Smartphone className="h-4 w-4" /> },
   { id: "events", label: "Events", icon: <CalendarCheck className="h-4 w-4" /> },
   { id: "payouts", label: "Payouts", icon: <Banknote className="h-4 w-4" /> },
   { id: "organizers", label: "Organizers", icon: <Users className="h-4 w-4" /> },
@@ -1188,6 +1203,101 @@ function SettingsSection({
 
 // ─── Main AdminPage ────────────────────────────────────────────────────────────
 
+function PaymentVerificationSection() {
+  const [items, setItems] = useState<ManualVerificationItem[]>([]);
+  const [status, setStatus] = useState("pending");
+  const [provider, setProvider] = useState("all");
+  const [search, setSearch] = useState("");
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    const supabase = getSupabaseBrowserClient();
+    const { data } = supabase ? await supabase.auth.getSession() : { data: { session: null } };
+    const accessToken = data.session?.access_token;
+    if (!accessToken) throw new Error("Admin session missing. Please sign in again.");
+    const result = await getAdminPaymentVerifications({ data: { accessToken, status, provider, search } });
+    setItems(result);
+    setError(null);
+  }, [status, provider, search]);
+
+  useEffect(() => {
+    load().catch((e) => setError(e instanceof Error ? e.message : "Could not load payment submissions."));
+  }, [load]);
+
+  const perform = async (item: ManualVerificationItem, action: "approve" | "reject" | "resend") => {
+    let reason = "";
+    if (action === "approve" && !window.confirm(`Approve UGX ${item.total.toLocaleString()} payment for ${item.buyerName}? Tickets will be issued.`)) return;
+    if (action === "reject") {
+      reason = window.prompt("Enter the reason for rejecting this payment:", "Transaction could not be verified")?.trim() || "";
+      if (!reason) return;
+    }
+    setBusyId(item.id);
+    setError(null);
+    try {
+      const supabase = getSupabaseBrowserClient();
+      const { data } = supabase ? await supabase.auth.getSession() : { data: { session: null } };
+      const accessToken = data.session?.access_token;
+      if (!accessToken) throw new Error("Admin session missing. Please sign in again.");
+      if (action === "approve") await approveAdminPayment({ data: { accessToken, orderId: item.id } });
+      if (action === "reject") await rejectAdminPayment({ data: { accessToken, orderId: item.id, reason, notifyCustomer: true } });
+      if (action === "resend") await resendAdminTicketNotifications({ data: { accessToken, orderId: item.id } });
+      await load();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : `Could not ${action} payment.`);
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  return (
+    <section className="space-y-5">
+      <div>
+        <h1 className="text-2xl font-bold">Payment Verification</h1>
+        <p className="mt-1 text-sm text-muted-foreground">Match the submitted transaction ID against your MTN or Airtel statement before approving.</p>
+      </div>
+      <div className="grid gap-3 sm:grid-cols-[1fr_180px_180px]">
+        <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search order, transaction, customer or event" className="rounded-lg border border-border bg-background px-3 py-2 text-sm" />
+        <select value={status} onChange={(e) => setStatus(e.target.value)} className="rounded-lg border border-border bg-background px-3 py-2 text-sm">
+          <option value="pending">Awaiting verification</option><option value="approved">Approved</option><option value="rejected">Rejected</option><option value="all">All statuses</option>
+        </select>
+        <select value={provider} onChange={(e) => setProvider(e.target.value)} className="rounded-lg border border-border bg-background px-3 py-2 text-sm">
+          <option value="all">All networks</option><option value="mtn">MTN MoMo</option><option value="airtel">Airtel Money</option>
+        </select>
+      </div>
+      {error && <div role="alert" className="rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">{error}</div>}
+      {items.length === 0 ? <div className="rounded-xl border border-border p-8 text-center text-sm text-muted-foreground">No payment submissions match these filters.</div> : (
+        <div className="space-y-3">
+          {items.map((item) => {
+            const pending = ["payment_submitted", "pending", "pending_payment"].includes(item.status);
+            return <article key={item.id} className="rounded-xl border border-border bg-card p-4 sm:p-5">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div><div className="font-semibold">{item.eventTitle}</div><div className="mt-1 text-xs text-muted-foreground">{item.buyerName} · {item.buyerEmail} · {item.buyerPhone}</div></div>
+                <div className="text-right"><div className="font-bold">{formatUGX(item.total)}</div><div className="text-xs text-muted-foreground">{item.paymentMethod} · {new Date(item.createdAt).toLocaleString()}</div></div>
+              </div>
+              <div className="mt-4 grid gap-3 text-sm sm:grid-cols-2 lg:grid-cols-4">
+                <div><div className="text-xs text-muted-foreground">Transaction ID</div><div className="font-mono font-semibold break-all">{item.transactionId || "—"}</div></div>
+                <div><div className="text-xs text-muted-foreground">Merchant Code</div><div>{item.merchantCode || "—"}</div></div>
+                <div><div className="text-xs text-muted-foreground">Tickets</div><div>{item.ticketTier} × {item.qty}</div></div>
+                <div><div className="text-xs text-muted-foreground">Status</div><div className="capitalize">{item.status.replaceAll("_", " ")}</div></div>
+              </div>
+              {item.isDuplicateTx && <div className="mt-3 flex items-center gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-700 dark:text-amber-300"><AlertTriangle className="h-4 w-4 shrink-0" />Duplicate transaction ID appears on another order. Verify carefully before approving.</div>}
+              {item.rejectionReason && <div className="mt-3 text-sm text-destructive">Rejection reason: {item.rejectionReason}</div>}
+              <div className="mt-4 flex flex-wrap gap-2">
+                {pending && <>
+                  <button disabled={busyId === item.id} onClick={() => perform(item, "approve")} className="rounded-lg bg-emerald-600 px-3 py-2 text-sm font-semibold text-white disabled:opacity-50">Approve & issue tickets</button>
+                  <button disabled={busyId === item.id} onClick={() => perform(item, "reject")} className="rounded-lg border border-destructive/40 px-3 py-2 text-sm font-semibold text-destructive disabled:opacity-50">Reject</button>
+                </>}
+                {!pending && ["paid", "payment_approved"].includes(item.status) && <button disabled={busyId === item.id} onClick={() => perform(item, "resend")} className="rounded-lg border border-border px-3 py-2 text-sm font-semibold disabled:opacity-50">Resend ticket email & SMS</button>}
+              </div>
+            </article>;
+          })}
+        </div>
+      )}
+    </section>
+  );
+}
+
 function AdminPage() {
   const [activeTab, setActiveTab] = useState<Tab>("overview");
   const [payouts, setPayouts] = useState<Payout[]>([]);
@@ -1399,6 +1509,7 @@ function AdminPage() {
                 pendingOrganizersCount={pendingOrganizersCount}
               />
             )}
+            {activeTab === "payments" && <PaymentVerificationSection />}
             {activeTab === "events" && (
               <EventsSection events={adminEvents} onDeleteEvent={handleDeleteEvent} />
             )}

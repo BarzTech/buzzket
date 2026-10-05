@@ -401,3 +401,17 @@ export async function downloadAllTicketsPdf(tickets: IssuedTicket[]) {
   downloadBytes(bytes, filename);
 }
 
+/**
+ * Generates raw PDF bytes for tickets in an order (used for email attachments).
+ */
+export async function generateTicketPdfBytes(tickets: IssuedTicket[]): Promise<Uint8Array> {
+  if (!tickets || tickets.length === 0) {
+    throw new Error("No tickets provided for PDF generation.");
+  }
+  const pdf = await PDFDocument.create();
+  for (const ticket of tickets) {
+    await renderTicketPage(pdf, ticket);
+  }
+  return await pdf.save();
+}
+

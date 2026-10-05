@@ -5,8 +5,16 @@ import {
   type PlatformSettings,
 } from "./platform";
 import { getSupabaseAdmin } from "../supabase/server";
+import type { ManualVerificationItem } from "../payments/types";
+import {
+  getIssuedTicketsForOrder,
+  sendTicketEmail,
+  sendTicketSms,
+  sendRejectionEmail,
+} from "./tickets";
+import { sendTwilioSms, buildRejectionSms } from "../sms/twilio";
 
-export type { PlatformSettings };
+export type { PlatformSettings, ManualVerificationItem };
 
 export type PayoutStatus = "pending" | "approved" | "rejected" | "paid";
 
@@ -83,6 +91,19 @@ async function requireAdmin(accessToken: string) {
   }
 
   return supabase;
+}
+
+async function requireAdminUser(accessToken: string) {
+  const supabase = getSupabaseAdmin();
+  if (!supabase) throw new Error("Supabase is not configured.");
+
+  const { data, error } = await supabase.auth.getUser(accessToken);
+  if (error || !data.user) throw new Error("Admin session is invalid.");
+  if (data.user.user_metadata?.role !== "admin") {
+    throw new Error("This account is not authorised for the admin console.");
+  }
+
+  return { supabase, user: data.user };
 }
 
 export const getAdminPayouts = createServerFn({ method: "POST" })
@@ -472,5 +493,371 @@ export const updatePlatformSettings = createServerFn({ method: "POST" })
 
     if (error) throw new Error(error.message);
     return { ok: true };
+  });
+
+// ─── Payment Verification (Manual Mobile Money) ──────────────────────────────
+
+export const getAdminPaymentVerifications = createServerFn({ method: "POST" })
+  .validator(
+    adminRequestSchema.extend({
+      status: z.string().optional(),
+      provider: z.string().optional(),
+      search: z.string().optional(),
+    }),
+  )
+  .handler(async ({ data: request }): Promise<ManualVerificationItem[]> => {
+    const supabase = await requireAdmin(request.accessToken);
+
+    let query = supabase
+      .from("orders")
+      .select(`
+        id,
+        event_id,
+        status,
+        contact_name,
+        contact_email,
+        contact_phone,
+        payment_method,
+        payment_provider,
+        transaction_id,
+        merchant_code,
+        subtotal,
+        fees,
+        total,
+        rejection_reason,
+        created_at,
+        verified_at,
+        verified_by,
+        email_sent_at,
+        email_error,
+        sms_sent_at,
+        sms_error,
+        event:events (
+          id,
+          title,
+          date,
+          venue
+        ),
+        order_items (
+          quantity,
+          unit_price,
+          tier:ticket_tiers (
+            id,
+            name
+          )
+        )
+      `)
+      .order("created_at", { ascending: false });
+
+    // Status filter
+    if (request.status && request.status !== "all") {
+      if (request.status === "pending") {
+        query = query.in("status", ["payment_submitted", "pending", "pending_payment"]);
+      } else if (request.status === "approved") {
+        query = query.in("status", ["paid", "payment_approved"]);
+      } else if (request.status === "rejected") {
+        query = query.eq("status", "payment_rejected");
+      } else {
+        query = query.eq("status", request.status);
+      }
+    }
+
+    // Provider filter
+    if (request.provider && request.provider !== "all") {
+      if (request.provider === "mtn") {
+        query = query.ilike("payment_method", "%MTN%");
+      } else if (request.provider === "airtel") {
+        query = query.ilike("payment_method", "%Airtel%");
+      }
+    }
+
+    const { data: orders, error } = await query;
+    if (error) {
+      console.error("getAdminPaymentVerifications error:", error);
+      throw new Error(error.message);
+    }
+
+    // Check duplicates across all statuses, so a pending payment is also
+    // flagged when that transaction was already approved or rejected before.
+    const { data: transactionRows, error: transactionError } = await supabase
+      .from("orders")
+      .select("id, transaction_id")
+      .not("transaction_id", "is", null);
+    if (transactionError) throw new Error(transactionError.message);
+
+    // Duplicate detection map for transaction IDs
+    const txCountMap = new Map<string, string[]>();
+    for (const ord of transactionRows ?? []) {
+      const tx = ord.transaction_id?.trim()?.toLowerCase();
+      if (tx) {
+        const existing = txCountMap.get(tx) || [];
+        existing.push(ord.id);
+        txCountMap.set(tx, existing);
+      }
+    }
+
+    const results: ManualVerificationItem[] = [];
+    const searchLower = request.search?.trim()?.toLowerCase();
+
+    for (const ord of orders ?? []) {
+      const event = Array.isArray(ord.event) ? ord.event[0] : ord.event;
+      const firstItem = ord.order_items?.[0];
+      const tier = firstItem ? (Array.isArray(firstItem.tier) ? firstItem.tier[0] : firstItem.tier) : null;
+      const totalQty = ord.order_items?.reduce((sum: number, it: any) => sum + (it.quantity || 0), 0) || 1;
+
+      const tx = ord.transaction_id?.trim()?.toLowerCase();
+      const duplicateList = tx ? txCountMap.get(tx) || [] : [];
+      const isDuplicate = duplicateList.length > 1;
+
+      // Filter by search string if provided
+      if (searchLower) {
+        const matches =
+          ord.id.toLowerCase().includes(searchLower) ||
+          (ord.transaction_id && ord.transaction_id.toLowerCase().includes(searchLower)) ||
+          (ord.contact_name && ord.contact_name.toLowerCase().includes(searchLower)) ||
+          (ord.contact_email && ord.contact_email.toLowerCase().includes(searchLower)) ||
+          (ord.contact_phone && ord.contact_phone.toLowerCase().includes(searchLower)) ||
+          (event?.title && event.title.toLowerCase().includes(searchLower));
+
+        if (!matches) continue;
+      }
+
+      results.push({
+        id: ord.id,
+        eventId: ord.event_id,
+        eventTitle: event?.title ?? "Unknown Event",
+        eventDate: event?.date ?? "",
+        eventVenue: event?.venue ?? "",
+        buyerName: ord.contact_name,
+        buyerEmail: ord.contact_email,
+        buyerPhone: ord.contact_phone,
+        ticketTier: tier?.name ?? "General",
+        qty: totalQty,
+        unitPrice: firstItem?.unit_price ?? 0,
+        total: ord.total,
+        subtotal: ord.subtotal,
+        fees: ord.fees,
+        paymentMethod: ord.payment_method,
+        paymentProvider: ord.payment_provider || "manual_momo",
+        transactionId: ord.transaction_id || "",
+        merchantCode: ord.merchant_code || "",
+        status: ord.status,
+        rejectionReason: ord.rejection_reason || null,
+        createdAt: ord.created_at,
+        verifiedAt: ord.verified_at || null,
+        verifiedBy: ord.verified_by || null,
+        emailSentAt: ord.email_sent_at || null,
+        emailError: ord.email_error || null,
+        smsSentAt: ord.sms_sent_at || null,
+        smsError: ord.sms_error || null,
+        isDuplicateTx: isDuplicate,
+        duplicateOrderIds: duplicateList.filter((id) => id !== ord.id),
+      });
+    }
+
+    return results;
+  });
+
+export const approveAdminPayment = createServerFn({ method: "POST" })
+  .validator(
+    adminRequestSchema.extend({
+      orderId: z.string().min(1),
+    }),
+  )
+  .handler(async ({ data: request }) => {
+    const { supabase, user } = await requireAdminUser(request.accessToken);
+
+    // Call approve_order_and_mint_tickets RPC
+    const { data: rows, error: rpcErr } = await supabase.rpc("approve_order_and_mint_tickets", {
+      p_order_id: request.orderId,
+      p_admin_id: user.id,
+    });
+
+    if (rpcErr) {
+      console.error("approve_order_and_mint_tickets error:", rpcErr);
+      throw new Error(rpcErr.message);
+    }
+
+    const row = rows?.[0];
+    if (!row) throw new Error("Could not approve order.");
+
+    // Fetch newly minted tickets
+    const tickets = await getIssuedTicketsForOrder(request.orderId);
+    let emailStatus: { sent: boolean; message: string } = { sent: false, message: "" };
+    let smsStatus: { sent: boolean; message: string } = { sent: false, message: "" };
+
+    if (tickets.length > 0) {
+      // Send Email with PDF attachment
+      try {
+        emailStatus = await sendTicketEmail(tickets);
+        await supabase
+          .from("orders")
+          .update({
+            email_sent_at: emailStatus.sent ? new Date().toISOString() : null,
+            email_error: emailStatus.sent ? null : emailStatus.message,
+          })
+          .eq("id", request.orderId);
+      } catch (e) {
+        console.error("Error sending approval email:", e);
+      }
+
+      // Send Twilio SMS
+      try {
+        smsStatus = await sendTicketSms(tickets);
+        await supabase
+          .from("orders")
+          .update({
+            sms_sent_at: smsStatus.sent ? new Date().toISOString() : null,
+            sms_error: smsStatus.sent ? null : smsStatus.message,
+          })
+          .eq("id", request.orderId);
+      } catch (e) {
+        console.error("Error sending approval SMS:", e);
+      }
+    }
+
+    return {
+      success: true,
+      orderId: request.orderId,
+      alreadyApproved: row.already_approved,
+      ticketsCount: tickets.length,
+      emailStatus,
+      smsStatus,
+    };
+  });
+
+export const rejectAdminPayment = createServerFn({ method: "POST" })
+  .validator(
+    adminRequestSchema.extend({
+      orderId: z.string().min(1),
+      reason: z.string().min(1),
+      notifyCustomer: z.boolean().default(true),
+    }),
+  )
+  .handler(async ({ data: request }) => {
+    const { supabase, user } = await requireAdminUser(request.accessToken);
+
+    // Call reject_order_and_release_inventory RPC
+    const { error: rpcErr } = await supabase.rpc("reject_order_and_release_inventory", {
+      p_order_id: request.orderId,
+      p_admin_id: user.id,
+      p_rejection_reason: request.reason,
+    });
+
+    if (rpcErr) {
+      console.error("reject_order_and_release_inventory error:", rpcErr);
+      throw new Error(rpcErr.message);
+    }
+
+    if (request.notifyCustomer) {
+      // Fetch order details for notification
+      const { data: ord } = await supabase
+        .from("orders")
+        .select(`
+          id,
+          contact_name,
+          contact_email,
+          contact_phone,
+          event:events ( title )
+        `)
+        .eq("id", request.orderId)
+        .single();
+
+      if (ord) {
+        const eventTitle = (Array.isArray(ord.event) ? ord.event[0]?.title : ord.event?.title) || "Buzzket Event";
+
+        // Send rejection SMS via Twilio
+        if (ord.contact_phone) {
+          try {
+            await sendTwilioSms({
+              to: ord.contact_phone,
+              message: buildRejectionSms(eventTitle, request.reason, request.orderId),
+            });
+          } catch (e) {
+            console.error("Rejection SMS failed:", e);
+          }
+        }
+
+        // Send rejection email via Resend
+        if (ord.contact_email) {
+          try {
+            await sendRejectionEmail({
+              to: ord.contact_email,
+              recipientName: ord.contact_name,
+              eventTitle,
+              orderId: request.orderId,
+              reason: request.reason,
+            });
+          } catch (e) {
+            console.error("Rejection Email failed:", e);
+          }
+        }
+      }
+    }
+
+    return { success: true, orderId: request.orderId };
+  });
+
+export const resendAdminTicketNotifications = createServerFn({ method: "POST" })
+  .validator(
+    adminRequestSchema.extend({
+      orderId: z.string().min(1),
+      customEmail: z.string().email().optional(),
+      customPhone: z.string().optional(),
+    }),
+  )
+  .handler(async ({ data: request }) => {
+    const { supabase, user } = await requireAdminUser(request.accessToken);
+
+    const tickets = await getIssuedTicketsForOrder(request.orderId);
+    if (!tickets || tickets.length === 0) {
+      throw new Error("No issued tickets found for this order. It may not be approved yet.");
+    }
+
+    if (request.customEmail) {
+      tickets.forEach((t) => (t.contactEmail = request.customEmail!));
+    }
+    if (request.customPhone) {
+      tickets.forEach((t) => (t.contactPhone = request.customPhone!));
+    }
+
+    const [emailResult, smsResult] = await Promise.allSettled([
+      sendTicketEmail(tickets),
+      sendTicketSms(tickets),
+    ]);
+
+    const email = emailResult.status === "fulfilled"
+      ? emailResult.value
+      : { sent: false, message: emailResult.reason instanceof Error ? emailResult.reason.message : "Ticket email delivery failed." };
+    const sms = smsResult.status === "fulfilled"
+      ? smsResult.value
+      : { sent: false, message: smsResult.reason instanceof Error ? smsResult.reason.message : "Ticket SMS delivery failed." };
+
+    const now = new Date().toISOString();
+    const { error: deliveryUpdateError } = await supabase
+      .from("orders")
+      .update({
+        email_sent_at: email.sent ? now : null,
+        email_error: email.sent ? null : email.message,
+        sms_sent_at: sms.sent ? now : null,
+        sms_error: sms.sent ? null : sms.message,
+      })
+      .eq("id", request.orderId);
+    if (deliveryUpdateError) throw new Error(deliveryUpdateError.message);
+
+    // Record audit log
+    await supabase.from("payment_audit_logs").insert({
+      order_id: request.orderId,
+      admin_id: user.id,
+      action: "resend_ticket",
+      metadata: {
+        customEmail: request.customEmail,
+        customPhone: request.customPhone,
+        emailResult: email,
+        smsResult: sms,
+      },
+    });
+
+    return { success: true, email, sms };
   });
 
