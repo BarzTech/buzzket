@@ -36,7 +36,7 @@ function NotFoundComponent() {
   );
 }
 
-function ErrorComponent({ error, reset }: { error: Error; reset: () => void }) {
+function ErrorComponent({ error, reset }: { error: unknown; reset: () => void }) {
   console.error(error);
   const router = useRouter();
 
@@ -73,7 +73,7 @@ function ErrorComponent({ error, reset }: { error: Error; reset: () => void }) {
 
 export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()({
   beforeLoad: ({ context }) =>
-    context.queryClient.ensureQueryData(publicPlatformSettingsQueryOptions()),
+    context.queryClient.ensureQueryData(publicPlatformSettingsQueryOptions()) as never,
   head: () => ({
     meta: [
       { charSet: "utf-8" },

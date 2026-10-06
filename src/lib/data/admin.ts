@@ -5,7 +5,7 @@ import {
   type PlatformSettings,
 } from "./platform";
 import { getSupabaseAdmin } from "../supabase/server";
-import type { ManualVerificationItem } from "../payments/types";
+import type { ManualPaymentStatus, ManualVerificationItem } from "../payments/types";
 import {
   getIssuedTicketsForOrder,
   sendTicketEmail,
@@ -13,6 +13,8 @@ import {
   sendRejectionEmail,
 } from "./tickets";
 import { sendTwilioSms, buildRejectionSms } from "../sms/twilio";
+import { recordWhatsAppDeliveryFailure, sendTicketWhatsApp } from "../whatsapp.server";
+import { formatTicketNumber } from "../format";
 
 export type { PlatformSettings, ManualVerificationItem };
 
@@ -80,13 +82,21 @@ export type AdminStats = {
 
 const adminRequestSchema = z.object({ accessToken: z.string().min(1) });
 
+export const verifyAdminLogin = createServerFn({ method: "POST" })
+  .validator(adminRequestSchema)
+  .handler(async ({ data }) => {
+    await requireAdmin(data.accessToken);
+    return { isAdmin: true };
+  });
+
 async function requireAdmin(accessToken: string) {
   const supabase = getSupabaseAdmin();
   if (!supabase) throw new Error("Supabase is not configured.");
 
   const { data, error } = await supabase.auth.getUser(accessToken);
   if (error || !data.user) throw new Error("Admin session is invalid.");
-  if (data.user.user_metadata?.role !== "admin") {
+  const { data: adminRole } = await supabase.from("user_roles").select("user_id").eq("user_id", data.user.id).eq("role", "admin").maybeSingle();
+  if (!adminRole) {
     throw new Error("This account is not authorised for the admin console.");
   }
 
@@ -99,7 +109,8 @@ async function requireAdminUser(accessToken: string) {
 
   const { data, error } = await supabase.auth.getUser(accessToken);
   if (error || !data.user) throw new Error("Admin session is invalid.");
-  if (data.user.user_metadata?.role !== "admin") {
+  const { data: adminRole } = await supabase.from("user_roles").select("user_id").eq("user_id", data.user.id).eq("role", "admin").maybeSingle();
+  if (!adminRole) {
     throw new Error("This account is not authorised for the admin console.");
   }
 
@@ -222,12 +233,6 @@ export const getAdminEvents = createServerFn({ method: "POST" })
       createdAt: row.created_at,
     }));
   });
-
-export function saveAdminPayouts(payouts: Payout[]): void {
-  // We no longer need local storage since we write to the database
-  if (typeof window === "undefined") return;
-  window.localStorage.removeItem("bzk-payout-status");
-}
 
 export const getAdminOrganizers = createServerFn({ method: "POST" })
   .validator(adminRequestSchema)
@@ -517,6 +522,7 @@ export const getAdminPaymentVerifications = createServerFn({ method: "POST" })
         contact_name,
         contact_email,
         contact_phone,
+        whatsapp_number,
         payment_method,
         payment_provider,
         transaction_id,
@@ -532,6 +538,13 @@ export const getAdminPaymentVerifications = createServerFn({ method: "POST" })
         email_error,
         sms_sent_at,
         sms_error,
+        ticket_generation_status,
+        ticket_generation_error,
+        whatsapp_delivery_status,
+        whatsapp_message_sid,
+        whatsapp_sent_at,
+        whatsapp_delivery_error,
+        whatsapp_retry_count,
         event:events (
           id,
           title,
@@ -558,7 +571,7 @@ export const getAdminPaymentVerifications = createServerFn({ method: "POST" })
       } else if (request.status === "rejected") {
         query = query.eq("status", "payment_rejected");
       } else {
-        query = query.eq("status", request.status);
+        query = query.eq("status", request.status as ManualPaymentStatus);
       }
     }
 
@@ -585,6 +598,19 @@ export const getAdminPaymentVerifications = createServerFn({ method: "POST" })
       .not("transaction_id", "is", null);
     if (transactionError) throw new Error(transactionError.message);
 
+    const orderIds = (orders ?? []).map((order) => order.id);
+    const ticketNumbersByOrder = new Map<string, string[]>();
+    if (orderIds.length) {
+      const { data: issued, error: issuedError } = await supabase.from("tickets")
+        .select("order_id,id,qr_token").in("order_id", orderIds).order("created_at", { ascending: true });
+      if (issuedError) throw new Error(issuedError.message);
+      for (const ticket of issued ?? []) {
+        const list = ticketNumbersByOrder.get(ticket.order_id) ?? [];
+        list.push(formatTicketNumber(ticket.id, ticket.qr_token));
+        ticketNumbersByOrder.set(ticket.order_id, list);
+      }
+    }
+
     // Duplicate detection map for transaction IDs
     const txCountMap = new Map<string, string[]>();
     for (const ord of transactionRows ?? []) {
@@ -603,7 +629,7 @@ export const getAdminPaymentVerifications = createServerFn({ method: "POST" })
       const event = Array.isArray(ord.event) ? ord.event[0] : ord.event;
       const firstItem = ord.order_items?.[0];
       const tier = firstItem ? (Array.isArray(firstItem.tier) ? firstItem.tier[0] : firstItem.tier) : null;
-      const totalQty = ord.order_items?.reduce((sum: number, it: any) => sum + (it.quantity || 0), 0) || 1;
+        const totalQty = ord.order_items?.reduce((sum, item) => sum + (item.quantity || 0), 0) || 1;
 
       const tx = ord.transaction_id?.trim()?.toLowerCase();
       const duplicateList = tx ? txCountMap.get(tx) || [] : [];
@@ -617,6 +643,7 @@ export const getAdminPaymentVerifications = createServerFn({ method: "POST" })
           (ord.contact_name && ord.contact_name.toLowerCase().includes(searchLower)) ||
           (ord.contact_email && ord.contact_email.toLowerCase().includes(searchLower)) ||
           (ord.contact_phone && ord.contact_phone.toLowerCase().includes(searchLower)) ||
+          (ord.whatsapp_number && ord.whatsapp_number.toLowerCase().includes(searchLower)) ||
           (event?.title && event.title.toLowerCase().includes(searchLower));
 
         if (!matches) continue;
@@ -631,8 +658,10 @@ export const getAdminPaymentVerifications = createServerFn({ method: "POST" })
         buyerName: ord.contact_name,
         buyerEmail: ord.contact_email,
         buyerPhone: ord.contact_phone,
+        whatsappNumber: ord.whatsapp_number || ord.contact_phone || "",
         ticketTier: tier?.name ?? "General",
         qty: totalQty,
+        ticketNumbers: ticketNumbersByOrder.get(ord.id) ?? [],
         unitPrice: firstItem?.unit_price ?? 0,
         total: ord.total,
         subtotal: ord.subtotal,
@@ -650,6 +679,13 @@ export const getAdminPaymentVerifications = createServerFn({ method: "POST" })
         emailError: ord.email_error || null,
         smsSentAt: ord.sms_sent_at || null,
         smsError: ord.sms_error || null,
+        ticketGenerationStatus: ord.ticket_generation_status || "pending",
+        ticketGenerationError: ord.ticket_generation_error || null,
+        whatsappDeliveryStatus: ord.whatsapp_delivery_status || "pending",
+        whatsappMessageSid: ord.whatsapp_message_sid || null,
+        whatsappSentAt: ord.whatsapp_sent_at || null,
+        whatsappDeliveryError: ord.whatsapp_delivery_error || null,
+        whatsappRetryCount: ord.whatsapp_retry_count || 0,
         isDuplicateTx: isDuplicate,
         duplicateOrderIds: duplicateList.filter((id) => id !== ord.id),
       });
@@ -686,7 +722,8 @@ export const approveAdminPayment = createServerFn({ method: "POST" })
     let emailStatus: { sent: boolean; message: string } = { sent: false, message: "" };
     let smsStatus: { sent: boolean; message: string } = { sent: false, message: "" };
 
-    if (tickets.length > 0) {
+    let whatsappStatus: { sent: boolean; message: string; messageSid?: string } = { sent: false, message: "" };
+    if (tickets.length > 0 && !row.already_approved) {
       // Send Email with PDF attachment
       try {
         emailStatus = await sendTicketEmail(tickets);
@@ -714,6 +751,14 @@ export const approveAdminPayment = createServerFn({ method: "POST" })
       } catch (e) {
         console.error("Error sending approval SMS:", e);
       }
+
+      try {
+        whatsappStatus = await sendTicketWhatsApp(request.orderId);
+      } catch (e) {
+        const message = e instanceof Error ? e.message : "WhatsApp delivery failed.";
+        whatsappStatus = { sent: false, message };
+        await recordWhatsAppDeliveryFailure(request.orderId, message);
+      }
     }
 
     return {
@@ -723,6 +768,7 @@ export const approveAdminPayment = createServerFn({ method: "POST" })
       ticketsCount: tickets.length,
       emailStatus,
       smsStatus,
+      whatsappStatus,
     };
   });
 
@@ -802,8 +848,6 @@ export const resendAdminTicketNotifications = createServerFn({ method: "POST" })
   .validator(
     adminRequestSchema.extend({
       orderId: z.string().min(1),
-      customEmail: z.string().email().optional(),
-      customPhone: z.string().optional(),
     }),
   )
   .handler(async ({ data: request }) => {
@@ -814,33 +858,19 @@ export const resendAdminTicketNotifications = createServerFn({ method: "POST" })
       throw new Error("No issued tickets found for this order. It may not be approved yet.");
     }
 
-    if (request.customEmail) {
-      tickets.forEach((t) => (t.contactEmail = request.customEmail!));
+    let whatsapp: { sent: boolean; message: string; messageSid?: string };
+    try {
+      whatsapp = await sendTicketWhatsApp(request.orderId);
+    } catch (error) {
+      whatsapp = { sent: false, message: error instanceof Error ? error.message : "WhatsApp ticket delivery failed." };
+      await recordWhatsAppDeliveryFailure(request.orderId, whatsapp.message);
     }
-    if (request.customPhone) {
-      tickets.forEach((t) => (t.contactPhone = request.customPhone!));
-    }
 
-    const [emailResult, smsResult] = await Promise.allSettled([
-      sendTicketEmail(tickets),
-      sendTicketSms(tickets),
-    ]);
-
-    const email = emailResult.status === "fulfilled"
-      ? emailResult.value
-      : { sent: false, message: emailResult.reason instanceof Error ? emailResult.reason.message : "Ticket email delivery failed." };
-    const sms = smsResult.status === "fulfilled"
-      ? smsResult.value
-      : { sent: false, message: smsResult.reason instanceof Error ? smsResult.reason.message : "Ticket SMS delivery failed." };
-
-    const now = new Date().toISOString();
     const { error: deliveryUpdateError } = await supabase
       .from("orders")
       .update({
-        email_sent_at: email.sent ? now : null,
-        email_error: email.sent ? null : email.message,
-        sms_sent_at: sms.sent ? now : null,
-        sms_error: sms.sent ? null : sms.message,
+        whatsapp_delivery_status: whatsapp.sent ? "sent" : "failed",
+        whatsapp_delivery_error: whatsapp.sent ? null : whatsapp.message,
       })
       .eq("id", request.orderId);
     if (deliveryUpdateError) throw new Error(deliveryUpdateError.message);
@@ -851,13 +881,10 @@ export const resendAdminTicketNotifications = createServerFn({ method: "POST" })
       admin_id: user.id,
       action: "resend_ticket",
       metadata: {
-        customEmail: request.customEmail,
-        customPhone: request.customPhone,
-        emailResult: email,
-        smsResult: sms,
+        whatsappResult: whatsapp,
       },
     });
 
-    return { success: true, email, sms };
+    return { success: true, whatsapp };
   });
 

@@ -47,6 +47,8 @@ function Login() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [mode, setMode] = useState<"signin" | "signup">("signin");
+  const [forgotMode, setForgotMode] = useState(false);
+  const [resetSent, setResetSent] = useState(false);
 
   const roleDestination = () => {
     const role = getStoredUser()?.role;
@@ -160,10 +162,25 @@ function Login() {
 
           {/* Email / password */}
           <TabsContent value="email" className="space-y-4 pt-4">
+            {forgotMode ? (
+              <>
+                <p className="text-sm text-muted-foreground">Enter your email address and we&apos;ll send a password reset link.</p>
+                <div>
+                  <Label htmlFor="reset-email">Email</Label>
+                  <Input id="reset-email" type="email" placeholder="you@example.com" value={email} onChange={(e) => { setEmail(e.target.value); setResetSent(false); }} disabled={busy} />
+                </div>
+                {resetSent && <Alert><AlertDescription>If an account exists for this email address, a password reset link has been sent.</AlertDescription></Alert>}
+                <Button onClick={() => run(() => auth.requestPasswordReset(email), async () => { setResetSent(true); })} disabled={busy || !email} className="w-full bg-cta text-cta-foreground hover:bg-cta/90 font-semibold">
+                  {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : "Send reset link"}
+                </Button>
+                <button type="button" onClick={() => { setForgotMode(false); setResetSent(false); }} className="w-full text-center text-xs text-muted-foreground hover:text-foreground">Back to sign in</button>
+              </>
+            ) : <>
             <div>
               <Label htmlFor="email">Email</Label>
               <Input id="email" type="email" placeholder="you@example.com" value={email} onChange={(e) => setEmail(e.target.value)} disabled={busy} />
             </div>
+            {mode === "signin" && <button type="button" onClick={() => { setForgotMode(true); setError(null); }} className="w-full text-right text-xs text-primary hover:underline">Forgot password?</button>}
             <div>
               <Label htmlFor="password">Password</Label>
               <Input id="password" type="password" placeholder="••••••••" value={password} onChange={(e) => setPassword(e.target.value)} disabled={busy} />
@@ -195,6 +212,7 @@ function Login() {
             >
               Register as an organiser
             </Link>
+            </>}
           </TabsContent>
         </Tabs>
       </Card>

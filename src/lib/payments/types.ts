@@ -43,8 +43,10 @@ export interface ManualVerificationItem {
   buyerName: string;
   buyerEmail: string;
   buyerPhone: string;
+  whatsappNumber: string;
   ticketTier: string;
   qty: number;
+  ticketNumbers: string[];
   unitPrice: number;
   total: number;
   subtotal: number;
@@ -62,6 +64,13 @@ export interface ManualVerificationItem {
   emailError: string | null;
   smsSentAt: string | null;
   smsError: string | null;
+  ticketGenerationStatus: string;
+  ticketGenerationError: string | null;
+  whatsappDeliveryStatus: "pending" | "sent" | "delivered" | "failed";
+  whatsappMessageSid: string | null;
+  whatsappSentAt: string | null;
+  whatsappDeliveryError: string | null;
+  whatsappRetryCount: number;
   isDuplicateTx?: boolean;
   duplicateOrderIds?: string[];
 }

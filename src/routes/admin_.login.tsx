@@ -11,6 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card } from "@/components/ui/card";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import { verifyAdminLogin } from "@/lib/data/admin";
 
 function safeRedirect(value: unknown): string {
   if (typeof value !== "string") return "/admin";
@@ -46,9 +47,15 @@ function AdminLogin() {
         return;
       }
       const supabase = getSupabaseBrowserClient();
-      const { data } = supabase ? await supabase.auth.getUser() : { data: { user: null } };
-      const role = data.user?.user_metadata?.role;
-      if (role !== "admin") {
+      const { data } = supabase ? await supabase.auth.getSession() : { data: { session: null } };
+      if (!data.session?.access_token) {
+        await auth.signOut();
+        setError("This account is not authorised for the admin console.");
+        return;
+      }
+      try {
+        await verifyAdminLogin({ data: { accessToken: data.session.access_token } });
+      } catch {
         await auth.signOut();
         setError("This account is not authorised for the admin console.");
         return;

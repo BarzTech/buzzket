@@ -28,20 +28,11 @@ import {
   Wallet,
   PiggyBank,
   Smartphone,
-  Copy,
-  Check,
-  Search,
-  AlertOctagon,
-  Send,
-  FileText,
-  CheckCircle,
-  ShieldCheck,
 } from "lucide-react";
 
 import { formatUGX } from "@/lib/format";
 import {
   getAdminPayouts,
-  saveAdminPayouts,
   updateAdminPayout,
   getAdminOrganizers,
   getAdminOrders,
@@ -1175,7 +1166,7 @@ function SettingsSection({
                       setPlatSaved(true);
                       setTimeout(() => setPlatSaved(false), 3000);
                     }
-                  } catch (e) {
+                  } catch {
                     alert("Failed to save settings");
                   } finally {
                     setPlatSaving(false);
@@ -1272,7 +1263,7 @@ function PaymentVerificationSection() {
             const pending = ["payment_submitted", "pending", "pending_payment"].includes(item.status);
             return <article key={item.id} className="rounded-xl border border-border bg-card p-4 sm:p-5">
               <div className="flex flex-wrap items-start justify-between gap-3">
-                <div><div className="font-semibold">{item.eventTitle}</div><div className="mt-1 text-xs text-muted-foreground">{item.buyerName} · {item.buyerEmail} · {item.buyerPhone}</div></div>
+                <div><div className="font-semibold">{item.eventTitle}</div><div className="mt-1 text-xs text-muted-foreground">{item.buyerName} · {item.buyerEmail} · WhatsApp {item.whatsappNumber}</div></div>
                 <div className="text-right"><div className="font-bold">{formatUGX(item.total)}</div><div className="text-xs text-muted-foreground">{item.paymentMethod} · {new Date(item.createdAt).toLocaleString()}</div></div>
               </div>
               <div className="mt-4 grid gap-3 text-sm sm:grid-cols-2 lg:grid-cols-4">
@@ -1288,7 +1279,16 @@ function PaymentVerificationSection() {
                   <button disabled={busyId === item.id} onClick={() => perform(item, "approve")} className="rounded-lg bg-emerald-600 px-3 py-2 text-sm font-semibold text-white disabled:opacity-50">Approve & issue tickets</button>
                   <button disabled={busyId === item.id} onClick={() => perform(item, "reject")} className="rounded-lg border border-destructive/40 px-3 py-2 text-sm font-semibold text-destructive disabled:opacity-50">Reject</button>
                 </>}
-                {!pending && ["paid", "payment_approved"].includes(item.status) && <button disabled={busyId === item.id} onClick={() => perform(item, "resend")} className="rounded-lg border border-border px-3 py-2 text-sm font-semibold disabled:opacity-50">Resend ticket email & SMS</button>}
+                {!pending && ["paid", "payment_approved"].includes(item.status) && <button disabled={busyId === item.id} onClick={() => perform(item, "resend")} className="rounded-lg border border-border px-3 py-2 text-sm font-semibold disabled:opacity-50">Retry Ticket PDF / Resend on WhatsApp</button>}
+                <div className="mt-3 grid gap-1 text-xs text-muted-foreground sm:grid-cols-2">
+                  <div>Ticket PDF: <span className="font-medium text-foreground">{item.ticketGenerationStatus}</span>{item.ticketGenerationError ? ` · ${item.ticketGenerationError}` : ""}</div>
+                  <div>WhatsApp: <span className="font-medium text-foreground">{item.whatsappDeliveryStatus}</span>{item.whatsappRetryCount ? ` · ${item.whatsappRetryCount} attempt(s)` : ""}</div>
+                  {item.whatsappMessageSid && <div className="sm:col-span-2">Twilio SID: <span className="font-mono">{item.whatsappMessageSid}</span></div>}
+                  {item.whatsappDeliveryError && <div className="text-destructive sm:col-span-2">Delivery error: {item.whatsappDeliveryError}</div>}
+                  {item.verifiedAt && <div>Approved: {new Date(item.verifiedAt).toLocaleString()}</div>}
+                  <div>Order number: <span className="font-mono">{item.id.slice(0, 8).toUpperCase()}</span></div>
+                  {item.ticketNumbers.length > 0 && <div className="sm:col-span-2">Ticket number(s): <span className="font-mono">{item.ticketNumbers.join(", ")}</span></div>}
+                </div>
               </div>
             </article>;
           })}

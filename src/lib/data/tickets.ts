@@ -11,6 +11,7 @@ import {
 import { generateTicketPdfBytes, sanitizeTicketFilename } from "../ticket-pdf";
 import { sendTwilioSms, buildApprovalSms } from "../sms/twilio";
 import { getMobileMoneyConfig } from "../payments/manual-momo";
+import { normalizeWhatsAppNumber } from "../payments/phone";
 
 export type IssuedTicket = {
   id: string;
@@ -23,6 +24,7 @@ export type IssuedTicket = {
   orderTotal: number;
   contactEmail: string;
   contactPhone: string;
+  whatsappNumber?: string;
   event: {
     id: string;
     title: string;
@@ -48,6 +50,7 @@ type TicketRow = {
     total: number;
     contact_email: string;
     contact_phone: string | null;
+    whatsapp_number?: string | null;
   } | null;
   tier: {
     name: string;
@@ -83,7 +86,8 @@ export async function getIssuedTicketsForOrder(orderId: string): Promise<IssuedT
         id,
         total,
         contact_email,
-        contact_phone
+        contact_phone,
+        whatsapp_number
       ),
       tier:ticket_tiers!tickets_tier_id_fkey (
         name,
@@ -119,6 +123,7 @@ export async function getIssuedTicketsForOrder(orderId: string): Promise<IssuedT
       orderTotal: row.order?.total ?? 0,
       contactEmail: row.order?.contact_email ?? "",
       contactPhone: row.order?.contact_phone ?? "",
+      whatsappNumber: row.order?.whatsapp_number ?? row.order?.contact_phone ?? "",
       seat: "GA",
       row: "N/A",
       gate: isVip ? "VIP" : "MAIN",
@@ -334,7 +339,7 @@ export async function sendTicketNotifications(tickets: IssuedTicket[]) {
 // --- Reserve (10-min hold, concurrency-safe via reserve_tickets RPC) ----------
 
 export const reserveTickets = createServerFn({ method: "POST" })
-  .validator(z.object({ tierId: z.string().min(1), qty: z.number().int().positive() }))
+  .validator(z.object({ tierId: z.string().uuid(), qty: z.number().int().min(1).max(20) }))
   .handler(async ({ data }) => {
     await assertPlatformOperational();
     const supabase = getSupabaseAdmin();
@@ -352,46 +357,6 @@ export const reserveTickets = createServerFn({ method: "POST" })
     return { reservationId: row.reservation_id, expiresAt: row.expires_at };
   });
 
-// --- Confirm payment -> paid order + issued tickets (with QR tokens) ----------
-
-export const confirmOrder = createServerFn({ method: "POST" })
-  .validator(
-    z.object({
-      reservationId: z.string().min(1),
-      qty: z.number().int().positive(),
-      unitPrice: z.number().int().nonnegative(),
-      contactName: z.string(),
-      contactEmail: z.string(),
-      contactPhone: z.string(),
-      paymentMethod: z.string(),
-    }),
-  )
-  .handler(async ({ data }) => {
-    const supabase = getSupabaseAdmin();
-    if (!supabase) {
-      throw new Error("Order confirmation requires Supabase server credentials.");
-    }
-
-    const { data: rows, error } = await supabase.rpc("confirm_reservation", {
-      p_reservation_id: data.reservationId,
-      p_contact_name: data.contactName,
-      p_contact_email: data.contactEmail,
-      p_contact_phone: data.contactPhone,
-      p_payment_method: data.paymentMethod,
-      p_unit_price: data.unitPrice,
-    });
-    if (error) throw new Error(error.message);
-    const row = rows?.[0];
-    if (!row) throw new Error("Could not confirm order");
-    const tickets = await getIssuedTicketsForOrder(row.order_id);
-    const notifications = await sendTicketNotifications(tickets);
-    return { orderId: row.order_id, qrTokens: row.qr_tokens, tickets, ...notifications };
-  });
-
-export const getOrderTickets = createServerFn({ method: "POST" })
-  .validator(z.object({ orderId: z.string().min(1) }))
-  .handler(async ({ data }) => getIssuedTicketsForOrder(data.orderId));
-
 // --- Manual Mobile Money (MTN & Airtel) ---------------------------------------
 
 export const submitManualMomoOrder = createServerFn({ method: "POST" })
@@ -399,13 +364,12 @@ export const submitManualMomoOrder = createServerFn({ method: "POST" })
     z.object({
       reservationId: z.string().min(1),
       network: z.enum(["mtn", "airtel"]),
-      transactionId: z.string().min(3, "Transaction reference / ID is required"),
+      transactionId: z.string().trim().min(3, "Transaction reference / ID is required").max(120),
       contactName: z.string().min(1, "Name is required"),
       contactEmail: z.string().email("A valid email address is required"),
       contactPhone: z.string().min(8, "Phone number is required"),
-      qty: z.number().int().positive(),
-      unitPrice: z.number().int().nonnegative(),
-      amount: z.number().positive(),
+      statusToken: z.string().regex(/^[a-f0-9]{64}$/i),
+      promoCode: z.string().max(80).optional(),
     }),
   )
   .handler(async ({ data }) => {
@@ -431,18 +395,20 @@ export const submitManualMomoOrder = createServerFn({ method: "POST" })
       );
     }
 
-    const config = getMobileMoneyConfig(data.network, data.amount);
+    const normalizedPhone = normalizeWhatsAppNumber(data.contactPhone);
+    const config = getMobileMoneyConfig(data.network);
+    if (!config.merchantCode) throw new Error("This Mobile Money provider is not configured on the server.");
 
     const { data: rows, error } = await supabase.rpc("submit_manual_payment", {
       p_reservation_id: data.reservationId,
       p_contact_name: data.contactName.trim(),
       p_contact_email: data.contactEmail.trim().toLowerCase(),
-      p_contact_phone: data.contactPhone.trim(),
+      p_whatsapp_number: normalizedPhone,
       p_payment_method: data.network === "mtn" ? "MTN Mobile Money" : "Airtel Money",
-      p_payment_provider: "manual_momo",
       p_transaction_id: trimmedTx,
       p_merchant_code: config.merchantCode,
-      p_unit_price: data.unitPrice,
+      p_status_token: data.statusToken,
+      p_promo_code: data.promoCode?.trim() || null,
     });
 
     if (error) {
@@ -453,15 +419,17 @@ export const submitManualMomoOrder = createServerFn({ method: "POST" })
     const row = rows?.[0];
     if (!row) throw new Error("Could not process order submission.");
 
-    return { orderId: row.order_id };
+    return { orderId: row.order_id, statusToken: row.status_token };
   });
 
 export const getManualOrderStatus = createServerFn({ method: "POST" })
-  .validator(z.object({ orderId: z.string().min(1) }))
+  .validator(z.object({ orderId: z.string().uuid(), statusToken: z.string().regex(/^[a-f0-9]{64}$/i) }))
   .handler(async ({ data }) => {
     const supabase = getSupabaseAdmin();
     if (!supabase) throw new Error("Supabase is not configured.");
 
+    const { createHash } = await import("node:crypto");
+    const tokenHash = createHash("sha256").update(data.statusToken).digest("hex");
     const { data: order, error } = await supabase
       .from("orders")
       .select(`
@@ -471,6 +439,7 @@ export const getManualOrderStatus = createServerFn({ method: "POST" })
         contact_name,
         contact_email,
         contact_phone,
+        whatsapp_number,
         payment_method,
         payment_provider,
         transaction_id,
@@ -500,6 +469,7 @@ export const getManualOrderStatus = createServerFn({ method: "POST" })
         )
       `)
       .eq("id", data.orderId)
+      .eq("guest_status_token_hash", tokenHash)
       .single();
 
     if (error || !order) {
@@ -605,6 +575,22 @@ async function getPesapalToken(apiUrl: string, key: string, secret: string): Pro
   return data.token;
 }
 
+async function verifyPesapalAmountAndReference(
+  supabase: NonNullable<ReturnType<typeof getSupabaseAdmin>>,
+  reservationId: string,
+  result: { merchant_reference?: string; amount?: string | number; currency?: string },
+) {
+  const { data: reservation, error } = await supabase.from("reservations")
+    .select("quantity,unit_price").eq("id", reservationId).single();
+  if (error || !reservation || reservation.unit_price === null) throw new Error("Payment does not match a valid reservation.");
+  if (result.merchant_reference !== reservationId) throw new Error("Pesapal transaction reference does not match this reservation.");
+  const expectedAmount = Math.ceil((reservation.unit_price + 500) / 0.95) * reservation.quantity;
+  if (String(result.currency).toUpperCase() !== "UGX" || Number(result.amount) !== expectedAmount) {
+    throw new Error("The verified Pesapal amount does not match the reserved ticket total.");
+  }
+  return reservation;
+}
+
 async function registerPesapalIpn(apiUrl: string, token: string, ipnUrl: string): Promise<string> {
   const res = await fetch(`${apiUrl}/URLSetup/RegisterIPN`, {
     method: "POST",
@@ -629,14 +615,11 @@ async function registerPesapalIpn(apiUrl: string, token: string, ipnUrl: string)
 export const initiatePesapalPayment = createServerFn({ method: "POST" })
   .validator(
     z.object({
-      reservationId: z.string().min(1),
-      amount: z.number().positive(),
+      reservationId: z.string().uuid(),
       email: z.string().email(),
-      phone: z.string(),
-      name: z.string(),
+      phone: z.string().min(8),
+      name: z.string().min(1),
       callbackUrl: z.string().url(),
-      qty: z.number().int().positive(),
-      unitPrice: z.number().int().nonnegative(),
     }),
   )
   .handler(async ({ data }) => {
@@ -651,31 +634,33 @@ export const initiatePesapalPayment = createServerFn({ method: "POST" })
     }
 
     const supabase = getSupabaseAdmin();
-    if (supabase) {
-      const { error: updErr } = await supabase
-        .from("reservations")
-        .update({
-          contact_name: data.name,
-          contact_email: data.email,
-          contact_phone: data.phone,
-          unit_price: data.unitPrice,
-        })
-        .eq("id", data.reservationId);
-      if (updErr) {
-        console.error("Failed to update contact details on reservation:", updErr);
-      }
+    if (!supabase) throw new Error("Supabase is not configured.");
+    const phone = normalizeWhatsAppNumber(data.phone);
+    const { data: reservation, error: reservationError } = await supabase.from("reservations")
+      .select("id,tier_id,quantity,status,expires_at").eq("id", data.reservationId).single();
+    if (reservationError || !reservation || reservation.status !== "active" || new Date(reservation.expires_at) <= new Date()) {
+      throw new Error("Reservation is unavailable or expired.");
     }
+    const { data: tier, error: tierError } = await supabase.from("ticket_tiers").select("price").eq("id", reservation.tier_id).single();
+    if (tierError || !tier) throw new Error("Ticket tier is unavailable.");
+    const unitPrice = tier.price;
+    const amount = Math.ceil((unitPrice + 500) / 0.95) * reservation.quantity;
+    const { error: updErr } = await supabase.from("reservations").update({
+      contact_name: data.name.trim(), contact_email: data.email.trim().toLowerCase(),
+      contact_phone: phone, unit_price: unitPrice,
+    }).eq("id", data.reservationId).eq("status", "active");
+    if (updErr) throw new Error(updErr.message);
 
     const token = await getPesapalToken(apiUrl, key, secret);
     const ipnId = await registerPesapalIpn(apiUrl, token, ipnUrl);
 
     // Format phone to be alphanumeric or simple string
-    const cleanPhone = data.phone.replace(/[^0-9+]/g, "");
+    const cleanPhone = phone;
 
     const payload = {
       id: data.reservationId,
       currency: "UGX",
-      amount: data.amount,
+      amount,
       description: `Ticket reservation ${data.reservationId}`,
       callback_url: data.callbackUrl,
       notification_id: ipnId,
@@ -746,6 +731,8 @@ export async function verifyPesapalPaymentBackground(orderTrackingId: string, re
     throw new Error("Order confirmation requires Supabase server credentials.");
   }
 
+  const verifiedReservation = await verifyPesapalAmountAndReference(supabase, reservationId, result);
+
   const { data: reservation, error: resvErr } = await supabase
     .from("reservations")
     .select("status, contact_name, contact_email, contact_phone, unit_price, quantity, order_id")
@@ -770,7 +757,7 @@ export async function verifyPesapalPaymentBackground(orderTrackingId: string, re
     p_contact_email: reservation.contact_email || "",
     p_contact_phone: reservation.contact_phone || "",
     p_payment_method: `Pesapal IPN (${result.payment_method || "Online"})`,
-    p_unit_price: reservation.unit_price || 0,
+    p_unit_price: verifiedReservation.unit_price || 0,
   });
 
   if (error) {
@@ -850,13 +837,15 @@ export const verifyPesapalPayment = createServerFn({ method: "POST" })
       throw new Error("Order confirmation requires Supabase server credentials.");
     }
 
+    const verifiedReservation = await verifyPesapalAmountAndReference(supabase, data.reservationId, result);
+
     const { data: rows, error } = await supabase.rpc("confirm_reservation", {
       p_reservation_id: data.reservationId,
       p_contact_name: data.contactName,
       p_contact_email: data.contactEmail,
       p_contact_phone: data.contactPhone,
       p_payment_method: `Pesapal (${result.payment_method || "Online"})`,
-      p_unit_price: data.unitPrice,
+      p_unit_price: verifiedReservation.unit_price || 0,
     });
 
     if (error) {

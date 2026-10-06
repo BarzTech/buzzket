@@ -23,6 +23,7 @@ type AuthContextValue = {
   verifyPhoneOtp: (phone: string, token: string) => Promise<AuthResult>;
   // Email / password.
   signInWithEmail: (email: string, password: string) => Promise<AuthResult>;
+  requestPasswordReset: (email: string) => Promise<AuthResult>;
   signUpWithEmail: (
     email: string,
     password: string,
@@ -40,7 +41,11 @@ function userFromSession(session: Session | null): SessionUser | null {
   return {
     id: sessionUser.id,
     label: sessionUser.phone || sessionUser.email || "Account",
-    role: (sessionUser.user_metadata?.role as SessionUser["role"] | undefined) ?? "buyer",
+    role: sessionUser.app_metadata?.role === "admin"
+      ? "admin"
+      : sessionUser.app_metadata?.role === "organizer" || sessionUser.user_metadata?.role === "organizer"
+        ? "organizer"
+        : "buyer",
   };
 }
 
@@ -129,6 +134,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     [],
   );
 
+  const requestPasswordReset = useCallback<AuthContextValue["requestPasswordReset"]>(async (email) => {
+    const supabase = getSupabaseBrowserClient();
+    if (!supabase) return { error: "Supabase is not configured." };
+    try {
+      const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), {
+        redirectTo: `${window.location.origin}/reset-password`,
+      });
+      // Never reveal account existence or provider errors to the requester.
+      if (error) console.warn("Password reset request could not be processed.");
+    } catch {
+      console.warn("Password reset request could not be processed.");
+    }
+    return { error: null };
+  }, []);
+
   const signOut = useCallback(async () => {
     const supabase = getSupabaseBrowserClient();
     if (supabase) await supabase.auth.signOut();
@@ -144,10 +164,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       signInWithPhone,
       verifyPhoneOtp,
       signInWithEmail,
+      requestPasswordReset,
       signUpWithEmail,
       signOut,
     }),
-    [user, loading, supabaseEnabled, signInWithPhone, verifyPhoneOtp, signInWithEmail, signUpWithEmail, signOut],
+    [user, loading, supabaseEnabled, signInWithPhone, verifyPhoneOtp, signInWithEmail, requestPasswordReset, signUpWithEmail, signOut],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

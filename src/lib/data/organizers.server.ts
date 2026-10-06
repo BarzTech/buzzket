@@ -8,9 +8,9 @@ export async function assertOrganizerApproved(
 ): Promise<void> {
   if (!organizerId) return;
 
-  const { data: userData, error: userError } = await supabase.auth.admin.getUserById(organizerId);
-  if (userError) throw new Error(userError.message);
-  if (userData.user?.user_metadata?.role === "admin") return;
+  const { data: adminRole } = await supabase.from("user_roles")
+    .select("user_id").eq("user_id", organizerId).eq("role", "admin").maybeSingle();
+  if (adminRole) return;
 
   const { data: profile, error: profileError } = await supabase
     .from("organizer_profiles")

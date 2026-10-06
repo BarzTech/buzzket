@@ -19,6 +19,7 @@ import { Route as ContactRouteImport } from './routes/contact'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as PricingRouteImport } from './routes/pricing'
 import { Route as PrivacyRouteImport } from './routes/privacy'
+import { Route as ResetPasswordRouteImport } from './routes/reset-password'
 import { Route as ResourcesRouteImport } from './routes/resources'
 import { Route as ScanRouteImport } from './routes/scan'
 import { Route as SellTicketsRouteImport } from './routes/sell-tickets'
@@ -31,6 +32,8 @@ import { Route as DashboardFormRouteImport } from './routes/dashboard.form'
 import { Route as EventsEventIdRouteImport } from './routes/events.$eventId'
 import { Route as OrganizerRegisterRouteImport } from './routes/organizer.register'
 import { Route as TicketsVerifyTokenRouteImport } from './routes/tickets.verify.$token'
+import { Route as ApiTicketsDownloadTokenRouteImport } from './routes/api.tickets.download.$token'
+import { Route as ApiWebhooksTwilioWhatsappRouteImport } from './routes/api.webhooks.twilio.whatsapp'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -80,6 +83,11 @@ const PricingRoute = PricingRouteImport.update({
 const PrivacyRoute = PrivacyRouteImport.update({
   id: '/privacy',
   path: '/privacy',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ResetPasswordRoute = ResetPasswordRouteImport.update({
+  id: '/reset-password',
+  path: '/reset-password',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ResourcesRoute = ResourcesRouteImport.update({
@@ -142,6 +150,17 @@ const TicketsVerifyTokenRoute = TicketsVerifyTokenRouteImport.update({
   path: '/verify/$token',
   getParentRoute: () => TicketsRoute,
 } as any)
+const ApiTicketsDownloadTokenRoute = ApiTicketsDownloadTokenRouteImport.update({
+  id: '/api/tickets/download/$token',
+  path: '/api/tickets/download/$token',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiWebhooksTwilioWhatsappRoute =
+  ApiWebhooksTwilioWhatsappRouteImport.update({
+    id: '/api/webhooks/twilio/whatsapp',
+    path: '/api/webhooks/twilio/whatsapp',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -154,6 +173,7 @@ export interface FileRoutesByFullPath {
   '/login': typeof LoginRoute
   '/pricing': typeof PricingRoute
   '/privacy': typeof PrivacyRoute
+  '/reset-password': typeof ResetPasswordRoute
   '/resources': typeof ResourcesRoute
   '/scan': typeof ScanRoute
   '/sell-tickets': typeof SellTicketsRoute
@@ -166,6 +186,8 @@ export interface FileRoutesByFullPath {
   '/organizer/register': typeof OrganizerRegisterRoute
   '/dashboard/': typeof DashboardIndexRoute
   '/tickets/verify/$token': typeof TicketsVerifyTokenRoute
+  '/api/tickets/download/$token': typeof ApiTicketsDownloadTokenRoute
+  '/api/webhooks/twilio/whatsapp': typeof ApiWebhooksTwilioWhatsappRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -178,6 +200,7 @@ export interface FileRoutesByTo {
   '/login': typeof LoginRoute
   '/pricing': typeof PricingRoute
   '/privacy': typeof PrivacyRoute
+  '/reset-password': typeof ResetPasswordRoute
   '/resources': typeof ResourcesRoute
   '/scan': typeof ScanRoute
   '/sell-tickets': typeof SellTicketsRoute
@@ -190,6 +213,8 @@ export interface FileRoutesByTo {
   '/organizer/register': typeof OrganizerRegisterRoute
   '/dashboard': typeof DashboardIndexRoute
   '/tickets/verify/$token': typeof TicketsVerifyTokenRoute
+  '/api/tickets/download/$token': typeof ApiTicketsDownloadTokenRoute
+  '/api/webhooks/twilio/whatsapp': typeof ApiWebhooksTwilioWhatsappRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -203,6 +228,7 @@ export interface FileRoutesById {
   '/login': typeof LoginRoute
   '/pricing': typeof PricingRoute
   '/privacy': typeof PrivacyRoute
+  '/reset-password': typeof ResetPasswordRoute
   '/resources': typeof ResourcesRoute
   '/scan': typeof ScanRoute
   '/sell-tickets': typeof SellTicketsRoute
@@ -215,6 +241,8 @@ export interface FileRoutesById {
   '/organizer/register': typeof OrganizerRegisterRoute
   '/dashboard/': typeof DashboardIndexRoute
   '/tickets/verify/$token': typeof TicketsVerifyTokenRoute
+  '/api/tickets/download/$token': typeof ApiTicketsDownloadTokenRoute
+  '/api/webhooks/twilio/whatsapp': typeof ApiWebhooksTwilioWhatsappRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -229,6 +257,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/pricing'
     | '/privacy'
+    | '/reset-password'
     | '/resources'
     | '/scan'
     | '/sell-tickets'
@@ -241,6 +270,8 @@ export interface FileRouteTypes {
     | '/organizer/register'
     | '/dashboard/'
     | '/tickets/verify/$token'
+    | '/api/tickets/download/$token'
+    | '/api/webhooks/twilio/whatsapp'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -253,6 +284,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/pricing'
     | '/privacy'
+    | '/reset-password'
     | '/resources'
     | '/scan'
     | '/sell-tickets'
@@ -265,6 +297,8 @@ export interface FileRouteTypes {
     | '/organizer/register'
     | '/dashboard'
     | '/tickets/verify/$token'
+    | '/api/tickets/download/$token'
+    | '/api/webhooks/twilio/whatsapp'
   id:
     | '__root__'
     | '/'
@@ -277,6 +311,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/pricing'
     | '/privacy'
+    | '/reset-password'
     | '/resources'
     | '/scan'
     | '/sell-tickets'
@@ -289,6 +324,8 @@ export interface FileRouteTypes {
     | '/organizer/register'
     | '/dashboard/'
     | '/tickets/verify/$token'
+    | '/api/tickets/download/$token'
+    | '/api/webhooks/twilio/whatsapp'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -302,6 +339,7 @@ export interface RootRouteChildren {
   LoginRoute: typeof LoginRoute
   PricingRoute: typeof PricingRoute
   PrivacyRoute: typeof PrivacyRoute
+  ResetPasswordRoute: typeof ResetPasswordRoute
   ResourcesRoute: typeof ResourcesRoute
   ScanRoute: typeof ScanRoute
   SellTicketsRoute: typeof SellTicketsRoute
@@ -313,6 +351,8 @@ export interface RootRouteChildren {
   EventsEventIdRoute: typeof EventsEventIdRoute
   OrganizerRegisterRoute: typeof OrganizerRegisterRoute
   DashboardIndexRoute: typeof DashboardIndexRoute
+  ApiTicketsDownloadTokenRoute: typeof ApiTicketsDownloadTokenRoute
+  ApiWebhooksTwilioWhatsappRoute: typeof ApiWebhooksTwilioWhatsappRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -385,6 +425,13 @@ declare module '@tanstack/react-router' {
       path: '/privacy'
       fullPath: '/privacy'
       preLoaderRoute: typeof PrivacyRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/reset-password': {
+      id: '/reset-password'
+      path: '/reset-password'
+      fullPath: '/reset-password'
+      preLoaderRoute: typeof ResetPasswordRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/resources': {
@@ -471,6 +518,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof TicketsVerifyTokenRouteImport
       parentRoute: typeof TicketsRoute
     }
+    '/api/tickets/download/$token': {
+      id: '/api/tickets/download/$token'
+      path: '/api/tickets/download/$token'
+      fullPath: '/api/tickets/download/$token'
+      preLoaderRoute: typeof ApiTicketsDownloadTokenRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/webhooks/twilio/whatsapp': {
+      id: '/api/webhooks/twilio/whatsapp'
+      path: '/api/webhooks/twilio/whatsapp'
+      fullPath: '/api/webhooks/twilio/whatsapp'
+      preLoaderRoute: typeof ApiWebhooksTwilioWhatsappRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -496,6 +557,7 @@ const rootRouteChildren: RootRouteChildren = {
   LoginRoute: LoginRoute,
   PricingRoute: PricingRoute,
   PrivacyRoute: PrivacyRoute,
+  ResetPasswordRoute: ResetPasswordRoute,
   ResourcesRoute: ResourcesRoute,
   ScanRoute: ScanRoute,
   SellTicketsRoute: SellTicketsRoute,
@@ -507,6 +569,8 @@ const rootRouteChildren: RootRouteChildren = {
   EventsEventIdRoute: EventsEventIdRoute,
   OrganizerRegisterRoute: OrganizerRegisterRoute,
   DashboardIndexRoute: DashboardIndexRoute,
+  ApiTicketsDownloadTokenRoute: ApiTicketsDownloadTokenRoute,
+  ApiWebhooksTwilioWhatsappRoute: ApiWebhooksTwilioWhatsappRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

@@ -31,6 +31,7 @@ import { Ticket } from "@/components/ticket";
 export const Route = createFileRoute("/checkout/status")({
   validateSearch: (search: Record<string, unknown>) => ({
     orderId: String(search.orderId || ""),
+    statusToken: String(search.statusToken || ""),
     OrderTrackingId: String(search.OrderTrackingId || ""),
     OrderMerchantReference: String(search.OrderMerchantReference || ""),
     reservationId: String(search.reservationId || ""),
@@ -46,13 +47,14 @@ export const Route = createFileRoute("/checkout/status")({
 function CheckoutStatus() {
   const search = Route.useSearch();
   const orderId = search.orderId;
+  const statusToken = search.statusToken;
   const trackingId = search.OrderTrackingId;
   const reservationId = search.reservationId || search.OrderMerchantReference;
 
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [orderData, setOrderData] = useState<any | null>(null);
+  const [orderData, setOrderData] = useState<Awaited<ReturnType<typeof getManualOrderStatus>>["order"] | null>(null);
   const [tickets, setTickets] = useState<IssuedTicket[] | null>(null);
   const [emailStatus, setEmailStatus] = useState<{ sent: boolean; message: string } | null>(null);
   const [smsStatus, setSmsStatus] = useState<{ sent: boolean; message: string } | null>(null);
@@ -71,7 +73,7 @@ function CheckoutStatus() {
     if (!orderId) return;
     if (!isSilent) setRefreshing(true);
     try {
-      const res = await getManualOrderStatus({ data: { orderId } });
+      const res = await getManualOrderStatus({ data: { orderId, statusToken } });
       setOrderData(res.order);
       if (res.isPaid && res.tickets && res.tickets.length > 0) {
         setTickets(res.tickets);
@@ -90,7 +92,7 @@ function CheckoutStatus() {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [orderId]);
+  }, [orderId, statusToken]);
 
   // Initial load
   useEffect(() => {
@@ -265,7 +267,7 @@ function CheckoutStatus() {
                     {orderData.transaction_id && (
                       <button
                         type="button"
-                        onClick={() => copyToClipboard(orderData.transaction_id, "txId")}
+                        onClick={() => copyToClipboard(orderData.transaction_id ?? "", "txId")}
                         className="text-muted-foreground hover:text-foreground inline-flex items-center"
                       >
                         {copiedField === "txId" ? (
@@ -287,7 +289,7 @@ function CheckoutStatus() {
                 </div>
 
                 <div className="sm:col-span-2 border-t pt-3">
-                  <div className="text-xs text-muted-foreground">Delivery Email & Phone</div>
+                  <div className="text-xs text-muted-foreground">Email & WhatsApp</div>
                   <div className="font-medium text-foreground mt-0.5">
                     {orderData.contact_email} {orderData.contact_phone ? `• ${orderData.contact_phone}` : ""}
                   </div>
@@ -309,10 +311,10 @@ function CheckoutStatus() {
                   Verification typically takes <strong>5 to 15 minutes</strong> during operating hours.
                 </li>
                 <li>
-                  Once approved, your official landscape tickets with scannable QR codes will be minted and automatically sent to <strong>{orderData.contact_email}</strong> as an attached PDF.
+                  Once approved, your official tickets with scannable QR codes will be minted and a secure download link will be sent to <strong>{orderData.whatsapp_number || orderData.contact_phone}</strong> on WhatsApp.
                 </li>
                 <li>
-                  If you provided a mobile phone number, you will also receive an SMS confirmation via Twilio.
+                  A copy of the PDF ticket may also be sent to <strong>{orderData.contact_email}</strong> by email.
                 </li>
                 <li>
                   You can keep this page open; it checks for updates automatically, or you can click <strong>Refresh Status</strong> below.

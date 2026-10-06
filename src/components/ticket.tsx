@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Download, QrCode, Loader2, Camera, Check } from "lucide-react";
+import { Download, QrCode, Loader2, Camera } from "lucide-react";
 import { formatTicketDate, formatTicketTime, formatTicketNumber, formatUGX } from "@/lib/format";
 import { tokenToDataUrl, downloadQrPng } from "@/lib/qr";
 import { downloadTicketPdf } from "@/lib/ticket-pdf";
@@ -47,7 +47,6 @@ export function Ticket({
 
   const [qrUrl, setQrUrl] = useState<string | null>(null);
   const [pdfBusy, setPdfBusy] = useState(false);
-  const [copiedHint, setCopiedHint] = useState(false);
 
   const ticketCode = formatTicketNumber(issuedTicket?.id ?? "", qrToken);
 
@@ -83,9 +82,9 @@ export function Ticket({
     orderTotal: price,
     contactEmail: "",
     contactPhone: "",
-    seat,
-    row,
-    gate,
+    seat: "GA",
+    row: "N/A",
+    gate: "MAIN",
     event: {
       id: "event",
       title: eventTitle,

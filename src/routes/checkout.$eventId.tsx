@@ -4,6 +4,7 @@ import { formatUGX } from "@/lib/format";
 import { eventQueryOptions, type Event } from "@/lib/data/events";
 import { reserveTickets, submitManualMomoOrder, validatePromoCode } from "@/lib/data/tickets";
 import { getMobileMoneyConfig } from "@/lib/payments/manual-momo";
+import { normalizeWhatsAppNumber } from "@/lib/payments/phone";
 import type { MobileMoneyNetwork } from "@/lib/payments/types";
 import { publicPlatformSettingsQueryOptions } from "@/lib/data/platform";
 import { calcOrder, COMMISSION_FLAT_UGX, COMMISSION_PERCENT } from "@/lib/fees";
@@ -18,7 +19,6 @@ import { Ticket } from "@/components/ticket";
 import { useEffect, useState } from "react";
 import {
   CheckCircle,
-  ShieldCheck,
   Clock,
   AlertCircle,
   Loader2,
@@ -78,7 +78,7 @@ function Checkout() {
 
   const [promoInput, setPromoInput] = useState("");
   const [promoError, setPromoError] = useState<string | null>(null);
-  const [promo, setPromo] = useState<{ id: string; type: "percent" | "flat"; value: number } | null>(null);
+  const [promo, setPromo] = useState<{ id: string; type: "percent" | "flat"; value: number; code: string } | null>(null);
   const [applyingPromo, setApplyingPromo] = useState(false);
 
   // Apply discount to unitPrice
@@ -98,7 +98,7 @@ function Checkout() {
     setPromoError(null);
     try {
       const res = await validatePromoCode({ data: { eventId, code: promoInput.trim() } });
-      setPromo(res);
+      setPromo({ ...res, code: promoInput.trim() });
       setPromoInput("");
     } catch (e) {
       setPromoError(e instanceof Error ? e.message : "Invalid promo code");
@@ -167,8 +167,11 @@ function Checkout() {
       setStep(2);
       return;
     }
-    if (contact.phone.replace(/\D/g, "").length < 9) {
-      setPayError("Enter a valid phone number for payment updates.");
+    let normalizedPhone: string;
+    try {
+      normalizedPhone = normalizeWhatsAppNumber(contact.phone);
+    } catch (error) {
+      setPayError(error instanceof Error ? error.message : "Enter a valid international WhatsApp number.");
       setStep(2);
       return;
     }
@@ -179,6 +182,7 @@ function Checkout() {
     setPaying(true);
     setPayError(null);
     try {
+      const statusToken = Array.from(crypto.getRandomValues(new Uint8Array(32)), (byte) => byte.toString(16).padStart(2, "0")).join("");
       const res = await submitManualMomoOrder({
         data: {
           reservationId,
@@ -186,10 +190,9 @@ function Checkout() {
           transactionId: transactionId.trim(),
           contactName: contact.name.trim(),
           contactEmail: contact.email.trim(),
-          contactPhone: contact.phone.trim(),
-          qty,
-          unitPrice: discountedUnitPrice,
-          amount: total,
+          contactPhone: normalizedPhone,
+          promoCode: promo?.code,
+          statusToken,
         },
       });
 
@@ -197,6 +200,15 @@ function Checkout() {
         to: "/checkout/status",
         search: {
           orderId: res.orderId,
+          statusToken: res.statusToken,
+          OrderTrackingId: "",
+          OrderMerchantReference: "",
+          reservationId: "",
+          qty: String(qty),
+          unitPrice: String(discountedUnitPrice),
+          contactName: contact.name,
+          contactEmail: contact.email,
+          contactPhone: normalizedPhone,
         },
       });
     } catch (e) {
@@ -356,8 +368,9 @@ function Checkout() {
                     <Input id="email" type="email" value={contact.email} onChange={(e) => setContact((c) => ({ ...c, email: e.target.value }))} placeholder="john@example.com" />
                   </div>
                   <div>
-                    <Label htmlFor="phone">Phone number</Label>
-                    <Input id="phone" value={contact.phone} onChange={(e) => setContact((c) => ({ ...c, phone: e.target.value }))} placeholder="+256 7XX XXX XXX" />
+                    <Label htmlFor="phone">WhatsApp Number</Label>
+                    <Input id="phone" type="tel" inputMode="tel" value={contact.phone} onChange={(e) => setContact((c) => ({ ...c, phone: e.target.value }))} placeholder="+256701234567" required />
+                    <p className="mt-1 text-xs text-muted-foreground">Enter your full international number with +country code. Your ticket will be sent to this WhatsApp number after your payment is approved.</p>
                   </div>
                 </div>
                 {payError && (
@@ -371,7 +384,7 @@ function Checkout() {
                     onClick={() => {
                       if (!contact.name.trim()) return setPayError("Enter the ticket holder's name.");
                       if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(contact.email.trim())) return setPayError("Enter a valid email address so we can send the tickets.");
-                      if (contact.phone.replace(/\D/g, "").length < 9) return setPayError("Enter a valid phone number for payment updates.");
+                      try { normalizeWhatsAppNumber(contact.phone); } catch (e) { return setPayError(e instanceof Error ? e.message : "Enter a valid WhatsApp number."); }
                       setPayError(null);
                       setStep(3);
                     }}

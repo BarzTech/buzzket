@@ -1,7 +1,7 @@
-import { PDFDocument, StandardFonts, rgb, degrees } from "pdf-lib";
+import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
 
 import { formatTicketDate, formatTicketTime, formatTicketNumber, formatUGX } from "./format";
-import { tokenToDataUrl, tokenToHighResDataUrl } from "./qr";
+import { tokenToHighResDataUrl } from "./qr";
 import type { IssuedTicket } from "./data/tickets";
 import { getEventImageBase64 } from "./data/tickets";
 
@@ -24,7 +24,7 @@ async function fetchImageBytes(url: string) {
 }
 
 function downloadBytes(bytes: Uint8Array, fileName: string) {
-  const blob = new Blob([bytes], { type: "application/pdf" });
+  const blob = new Blob([bytes.slice().buffer as ArrayBuffer], { type: "application/pdf" });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
@@ -72,7 +72,7 @@ export function sanitizeTicketFilename(eventTitle: string, ticketNumber: string)
  * Draws a single landscape ticket onto a PDFDocument page.
  * Uses exact 828 x 285 dimensions (~2.905:1 aspect ratio).
  */
-export async function renderTicketPage(pdf: PDFDocument, ticket: IssuedTicket) {
+export async function renderTicketPage(pdf: PDFDocument, ticket: IssuedTicket, publicOrigin?: string) {
   const pageWidth = 828;
   const pageHeight = 285;
   const stubX = 648; // ~78.26% width for main ticket, ~21.74% for stub
@@ -326,7 +326,7 @@ export async function renderTicketPage(pdf: PDFDocument, ticket: IssuedTicket) {
   });
 
   try {
-    const origin = typeof window !== "undefined" ? window.location.origin : "https://buzzket.app";
+    const origin = publicOrigin || (typeof window !== "undefined" ? window.location.origin : "https://buzzket.app");
     const verificationUrl = `${origin}/tickets/verify/${ticket.qrToken}`;
     const qrDataUrl = await tokenToHighResDataUrl(verificationUrl);
     const qrBytes = Uint8Array.from(atob(qrDataUrl.split(",")[1] ?? ""), (char) => char.charCodeAt(0));
@@ -404,13 +404,13 @@ export async function downloadAllTicketsPdf(tickets: IssuedTicket[]) {
 /**
  * Generates raw PDF bytes for tickets in an order (used for email attachments).
  */
-export async function generateTicketPdfBytes(tickets: IssuedTicket[]): Promise<Uint8Array> {
+export async function generateTicketPdfBytes(tickets: IssuedTicket[], publicOrigin?: string): Promise<Uint8Array> {
   if (!tickets || tickets.length === 0) {
     throw new Error("No tickets provided for PDF generation.");
   }
   const pdf = await PDFDocument.create();
   for (const ticket of tickets) {
-    await renderTicketPage(pdf, ticket);
+    await renderTicketPage(pdf, ticket, publicOrigin);
   }
   return await pdf.save();
 }
