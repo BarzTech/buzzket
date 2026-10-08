@@ -13,6 +13,7 @@ import {
   Ticket,
   TrendingUp,
   Users,
+  UserRound,
 } from "lucide-react";
 
 import { requireRoleOrRedirect } from "@/lib/auth/guard";
@@ -458,11 +459,13 @@ function Dashboard() {
               <Card className="p-5">
                 <form onSubmit={submitProfile} className="space-y-5">
                   <div className="flex flex-wrap items-center gap-4">
-                    <img
-                      src={profileForm.avatarUrl || "https://images.unsplash.com/photo-1514525253161-7a46d19cd819?q=80&w=300&auto=format&fit=crop"}
-                      alt=""
-                      className="h-20 w-20 rounded-full object-cover ring-1 ring-border"
-                    />
+                    {profileForm.avatarUrl ? (
+                      <img src={profileForm.avatarUrl} alt="Organizer profile" className="h-20 w-20 rounded-full object-cover ring-1 ring-border" />
+                    ) : (
+                      <div aria-label="No profile picture uploaded" className="flex h-20 w-20 items-center justify-center rounded-full bg-muted text-muted-foreground ring-1 ring-border">
+                        <UserRound className="h-10 w-10" aria-hidden="true" />
+                      </div>
+                    )}
                     <div>
                       <Label htmlFor="avatar-upload" className="mb-2 block">Avatar</Label>
                       <Input id="avatar-upload" type="file" accept="image/*" onChange={handleAvatarUpload} disabled={uploadingAvatar} />

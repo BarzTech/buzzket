@@ -9,7 +9,7 @@ import { Card } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Calendar, MapPin, Clock, Ticket, Share2, AlertCircle } from "lucide-react";
+import { Calendar, MapPin, Clock, Ticket, Share2, AlertCircle, UserRound } from "lucide-react";
 import { useState, useEffect } from "react";
 
 export const Route = createFileRoute("/events/$eventId")({
@@ -139,7 +139,13 @@ function EventDetail() {
             {/* Organizer */}
             <h3 className="text-lg font-semibold">Organizer</h3>
             <div className="mt-3 flex items-center gap-4">
-              <img src={event.organizer.avatar} alt={event.organizer.name} className="h-14 w-14 rounded-full object-cover ring-2 ring-primary/20" />
+              {event.organizer.avatar ? (
+                <img src={event.organizer.avatar} alt={event.organizer.name} className="h-14 w-14 rounded-full object-cover ring-2 ring-primary/20" />
+              ) : (
+                <div aria-label="No organizer profile picture" className="flex h-14 w-14 items-center justify-center rounded-full bg-muted text-muted-foreground ring-2 ring-border">
+                  <UserRound className="h-7 w-7" aria-hidden="true" />
+                </div>
+              )}
               <div>
                 <div className="font-medium">{event.organizer.name}</div>
                 <div className="text-xs text-muted-foreground">Verified organizer</div>

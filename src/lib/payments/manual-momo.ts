@@ -2,26 +2,23 @@ import type { MobileMoneyConfig, MobileMoneyNetwork } from "./types";
 import { formatUGX } from "../format";
 
 export const DEFAULT_MTN_CONFIG = {
-  // Never ship a sample merchant code: it could direct a real payment to the
-  // wrong account. Configure the server and public Vite values for production.
-  merchantCode: "",
-  merchantName: "BUZZKET EVENTS",
+  merchantCode: "04454491",
+  merchantName: "DARREN BAZIRA",
   ussdCode: "*165*3#",
 };
 
 export const DEFAULT_AIRTEL_CONFIG = {
-  merchantCode: "",
-  merchantName: "BUZZKET EVENTS",
+  merchantCode: "6993013",
+  merchantName: "BUZZKET",
   ussdCode: "*185*9#",
 };
 
 export function getMobileMoneyConfig(network: MobileMoneyNetwork, amountUGX?: number): MobileMoneyConfig {
   const amountStr = amountUGX ? formatUGX(amountUGX) : "the exact total";
-  const isServer = typeof window === "undefined";
 
   if (network === "mtn") {
-    const code = (isServer ? process.env.MTN_MERCHANT_CODE : import.meta.env.VITE_MTN_MERCHANT_CODE) || DEFAULT_MTN_CONFIG.merchantCode;
-    const name = (isServer ? process.env.MTN_MERCHANT_NAME : import.meta.env.VITE_MTN_MERCHANT_NAME) || DEFAULT_MTN_CONFIG.merchantName;
+    const code = DEFAULT_MTN_CONFIG.merchantCode;
+    const name = DEFAULT_MTN_CONFIG.merchantName;
     return {
       network: "mtn",
       name: "MTN Mobile Money",
@@ -40,8 +37,8 @@ export function getMobileMoneyConfig(network: MobileMoneyNetwork, amountUGX?: nu
     };
   }
 
-  const code = (isServer ? process.env.AIRTEL_MERCHANT_CODE : import.meta.env.VITE_AIRTEL_MERCHANT_CODE) || DEFAULT_AIRTEL_CONFIG.merchantCode;
-  const name = (isServer ? process.env.AIRTEL_MERCHANT_NAME : import.meta.env.VITE_AIRTEL_MERCHANT_NAME) || DEFAULT_AIRTEL_CONFIG.merchantName;
+  const code = DEFAULT_AIRTEL_CONFIG.merchantCode;
+  const name = DEFAULT_AIRTEL_CONFIG.merchantName;
   return {
     network: "airtel",
     name: "Airtel Money",

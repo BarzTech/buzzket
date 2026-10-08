@@ -180,11 +180,11 @@ function Login() {
               <Label htmlFor="email">Email</Label>
               <Input id="email" type="email" placeholder="you@example.com" value={email} onChange={(e) => setEmail(e.target.value)} disabled={busy} />
             </div>
-            {mode === "signin" && <button type="button" onClick={() => { setForgotMode(true); setError(null); }} className="w-full text-right text-xs text-primary hover:underline">Forgot password?</button>}
             <div>
               <Label htmlFor="password">Password</Label>
               <Input id="password" type="password" placeholder="••••••••" value={password} onChange={(e) => setPassword(e.target.value)} disabled={busy} />
             </div>
+            {mode === "signin" && <button type="button" onClick={() => { setForgotMode(true); setError(null); }} className="-mt-2 w-full text-right text-xs text-primary hover:underline">Forgot password?</button>}
             <Button
               onClick={() =>
                 mode === "signin"

@@ -28,6 +28,8 @@ import {
   Wallet,
   PiggyBank,
   Smartphone,
+  Copy,
+  Check,
 } from "lucide-react";
 
 import { formatUGX } from "@/lib/format";
@@ -1200,6 +1202,7 @@ function PaymentVerificationSection() {
   const [provider, setProvider] = useState("all");
   const [search, setSearch] = useState("");
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [copiedTransactionId, setCopiedTransactionId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
@@ -1241,6 +1244,16 @@ function PaymentVerificationSection() {
     }
   };
 
+  const copyTransactionId = async (transactionId: string) => {
+    try {
+      await navigator.clipboard.writeText(transactionId);
+      setCopiedTransactionId(transactionId);
+      window.setTimeout(() => setCopiedTransactionId((current) => current === transactionId ? null : current), 1800);
+    } catch {
+      setError("Could not copy the transaction ID. Please select and copy it manually.");
+    }
+  };
+
   return (
     <section className="space-y-5">
       <div>
@@ -1248,7 +1261,7 @@ function PaymentVerificationSection() {
         <p className="mt-1 text-sm text-muted-foreground">Match the submitted transaction ID against your MTN or Airtel statement before approving.</p>
       </div>
       <div className="grid gap-3 sm:grid-cols-[1fr_180px_180px]">
-        <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search order, transaction, customer or event" className="rounded-lg border border-border bg-background px-3 py-2 text-sm" />
+        <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search transaction/reference ID, order, customer or event" className="rounded-lg border border-border bg-background px-3 py-2 text-sm" />
         <select value={status} onChange={(e) => setStatus(e.target.value)} className="rounded-lg border border-border bg-background px-3 py-2 text-sm">
           <option value="pending">Awaiting verification</option><option value="approved">Approved</option><option value="rejected">Rejected</option><option value="all">All statuses</option>
         </select>
@@ -1267,7 +1280,7 @@ function PaymentVerificationSection() {
                 <div className="text-right"><div className="font-bold">{formatUGX(item.total)}</div><div className="text-xs text-muted-foreground">{item.paymentMethod} · {new Date(item.createdAt).toLocaleString()}</div></div>
               </div>
               <div className="mt-4 grid gap-3 text-sm sm:grid-cols-2 lg:grid-cols-4">
-                <div><div className="text-xs text-muted-foreground">Transaction ID</div><div className="font-mono font-semibold break-all">{item.transactionId || "—"}</div></div>
+                <div className="rounded-lg border border-primary/30 bg-primary/5 p-3 sm:col-span-2 lg:col-span-4"><div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Transaction ID / Reference — match against mobile money receipt</div><div className="mt-1 flex flex-wrap items-center justify-between gap-2"><span className="break-all font-mono text-lg font-bold tracking-wide">{item.transactionId || "—"}</span>{item.transactionId && <button type="button" onClick={() => copyTransactionId(item.transactionId)} className="inline-flex shrink-0 items-center gap-1.5 rounded-md border border-border bg-background px-2.5 py-1.5 text-xs font-medium hover:bg-muted" aria-label="Copy transaction ID">{copiedTransactionId === item.transactionId ? <Check className="h-3.5 w-3.5 text-emerald-600" /> : <Copy className="h-3.5 w-3.5" />}{copiedTransactionId === item.transactionId ? "Copied" : "Copy ID"}</button>}</div></div>
                 <div><div className="text-xs text-muted-foreground">Merchant Code</div><div>{item.merchantCode || "—"}</div></div>
                 <div><div className="text-xs text-muted-foreground">Tickets</div><div>{item.ticketTier} × {item.qty}</div></div>
                 <div><div className="text-xs text-muted-foreground">Status</div><div className="capitalize">{item.status.replaceAll("_", " ")}</div></div>

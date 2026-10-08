@@ -44,7 +44,7 @@ export async function upsertEventServer(eventData: {
       price_from: priceFrom,
       organizer_id: organizerId || null,
       organizer_name: "Buzzket Organiser",
-      organizer_avatar: "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=400&q=70",
+      organizer_avatar: "",
     })
     .select("id").single();
 
