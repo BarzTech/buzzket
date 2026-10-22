@@ -111,6 +111,7 @@ function AdminLogin() {
           <div>
             <Label htmlFor="admin-password">Password</Label>
             <Input id="admin-password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="current-password" disabled={busy} />
+            <Link to="/admin/forgot-password" className="mt-2 inline-block text-sm text-primary underline">Forgot Password?</Link>
           </div>
           <Button
             type="submit"
@@ -120,6 +121,7 @@ function AdminLogin() {
             {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : "Sign in to admin"}
           </Button>
         </form>
+        <Link to="/admin/security" className="mt-4 block text-center text-xs text-muted-foreground underline">Set up a recovery phone (signed-in staff)</Link>
       </Card>
     </div>
   );

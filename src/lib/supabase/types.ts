@@ -253,6 +253,24 @@ export type Database = {
         Update: Partial<Database["public"]["Tables"]["user_roles"]["Row"]>;
         Relationships: [];
       };
+      staff_password_recovery_limits: {
+        Row: { email_hash: string; window_started_at: string; attempts: number };
+        Insert: { email_hash: string; window_started_at?: string; attempts?: number };
+        Update: Partial<Database["public"]["Tables"]["staff_password_recovery_limits"]["Row"]>;
+        Relationships: [];
+      };
+      staff_password_recovery_grants: {
+        Row: { token_hash: string; user_id: string; created_at: string; expires_at: string; consumed_at: string | null };
+        Insert: { token_hash: string; user_id: string; expires_at: string; created_at?: string; consumed_at?: string | null };
+        Update: Partial<Database["public"]["Tables"]["staff_password_recovery_grants"]["Row"]>;
+        Relationships: [];
+      };
+      staff_recovery_phone_audit: {
+        Row: { id: string; user_id: string; phone_hash: string; verified_at: string };
+        Insert: { user_id: string; phone_hash: string; id?: string; verified_at?: string };
+        Update: Partial<Database["public"]["Tables"]["staff_recovery_phone_audit"]["Row"]>;
+        Relationships: [];
+      };
     };
     Views: {
       tier_availability: {
@@ -333,6 +351,8 @@ export type Database = {
           event_id: string | null;
         }[];
       };
+      claim_staff_recovery_attempt: { Args: { p_email_hash: string }; Returns: boolean };
+      consume_staff_recovery_grant: { Args: { p_token_hash: string }; Returns: string };
     };
   };
 };

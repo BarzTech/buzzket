@@ -24,7 +24,9 @@ import { Route as ResourcesRouteImport } from './routes/resources'
 import { Route as ScanRouteImport } from './routes/scan'
 import { Route as SellTicketsRouteImport } from './routes/sell-tickets'
 import { Route as TicketsRouteImport } from './routes/tickets'
+import { Route as AdminForgotPasswordRouteImport } from './routes/admin_.forgot-password'
 import { Route as AdminLoginRouteImport } from './routes/admin_.login'
+import { Route as AdminSecurityRouteImport } from './routes/admin_.security'
 import { Route as CheckoutEventIdRouteImport } from './routes/checkout.$eventId'
 import { Route as CheckoutStatusRouteImport } from './routes/checkout.status'
 import { Route as DashboardIndexRouteImport } from './routes/dashboard.index'
@@ -110,9 +112,19 @@ const TicketsRoute = TicketsRouteImport.update({
   path: '/tickets',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AdminForgotPasswordRoute = AdminForgotPasswordRouteImport.update({
+  id: '/admin_/forgot-password',
+  path: '/admin/forgot-password',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AdminLoginRoute = AdminLoginRouteImport.update({
   id: '/admin_/login',
   path: '/admin/login',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AdminSecurityRoute = AdminSecurityRouteImport.update({
+  id: '/admin_/security',
+  path: '/admin/security',
   getParentRoute: () => rootRouteImport,
 } as any)
 const CheckoutEventIdRoute = CheckoutEventIdRouteImport.update({
@@ -178,7 +190,9 @@ export interface FileRoutesByFullPath {
   '/scan': typeof ScanRoute
   '/sell-tickets': typeof SellTicketsRoute
   '/tickets': typeof TicketsRouteWithChildren
+  '/admin/forgot-password': typeof AdminForgotPasswordRoute
   '/admin/login': typeof AdminLoginRoute
+  '/admin/security': typeof AdminSecurityRoute
   '/checkout/$eventId': typeof CheckoutEventIdRoute
   '/checkout/status': typeof CheckoutStatusRoute
   '/dashboard/form': typeof DashboardFormRoute
@@ -205,7 +219,9 @@ export interface FileRoutesByTo {
   '/scan': typeof ScanRoute
   '/sell-tickets': typeof SellTicketsRoute
   '/tickets': typeof TicketsRouteWithChildren
+  '/admin/forgot-password': typeof AdminForgotPasswordRoute
   '/admin/login': typeof AdminLoginRoute
+  '/admin/security': typeof AdminSecurityRoute
   '/checkout/$eventId': typeof CheckoutEventIdRoute
   '/checkout/status': typeof CheckoutStatusRoute
   '/dashboard/form': typeof DashboardFormRoute
@@ -233,7 +249,9 @@ export interface FileRoutesById {
   '/scan': typeof ScanRoute
   '/sell-tickets': typeof SellTicketsRoute
   '/tickets': typeof TicketsRouteWithChildren
+  '/admin_/forgot-password': typeof AdminForgotPasswordRoute
   '/admin_/login': typeof AdminLoginRoute
+  '/admin_/security': typeof AdminSecurityRoute
   '/checkout/$eventId': typeof CheckoutEventIdRoute
   '/checkout/status': typeof CheckoutStatusRoute
   '/dashboard/form': typeof DashboardFormRoute
@@ -262,7 +280,9 @@ export interface FileRouteTypes {
     | '/scan'
     | '/sell-tickets'
     | '/tickets'
+    | '/admin/forgot-password'
     | '/admin/login'
+    | '/admin/security'
     | '/checkout/$eventId'
     | '/checkout/status'
     | '/dashboard/form'
@@ -289,7 +309,9 @@ export interface FileRouteTypes {
     | '/scan'
     | '/sell-tickets'
     | '/tickets'
+    | '/admin/forgot-password'
     | '/admin/login'
+    | '/admin/security'
     | '/checkout/$eventId'
     | '/checkout/status'
     | '/dashboard/form'
@@ -316,7 +338,9 @@ export interface FileRouteTypes {
     | '/scan'
     | '/sell-tickets'
     | '/tickets'
+    | '/admin_/forgot-password'
     | '/admin_/login'
+    | '/admin_/security'
     | '/checkout/$eventId'
     | '/checkout/status'
     | '/dashboard/form'
@@ -344,7 +368,9 @@ export interface RootRouteChildren {
   ScanRoute: typeof ScanRoute
   SellTicketsRoute: typeof SellTicketsRoute
   TicketsRoute: typeof TicketsRouteWithChildren
+  AdminForgotPasswordRoute: typeof AdminForgotPasswordRoute
   AdminLoginRoute: typeof AdminLoginRoute
+  AdminSecurityRoute: typeof AdminSecurityRoute
   CheckoutEventIdRoute: typeof CheckoutEventIdRoute
   CheckoutStatusRoute: typeof CheckoutStatusRoute
   DashboardFormRoute: typeof DashboardFormRoute
@@ -462,11 +488,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof TicketsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/admin_/forgot-password': {
+      id: '/admin_/forgot-password'
+      path: '/admin/forgot-password'
+      fullPath: '/admin/forgot-password'
+      preLoaderRoute: typeof AdminForgotPasswordRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/admin_/login': {
       id: '/admin_/login'
       path: '/admin/login'
       fullPath: '/admin/login'
       preLoaderRoute: typeof AdminLoginRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/admin_/security': {
+      id: '/admin_/security'
+      path: '/admin/security'
+      fullPath: '/admin/security'
+      preLoaderRoute: typeof AdminSecurityRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/checkout/$eventId': {
@@ -562,7 +602,9 @@ const rootRouteChildren: RootRouteChildren = {
   ScanRoute: ScanRoute,
   SellTicketsRoute: SellTicketsRoute,
   TicketsRoute: TicketsRouteWithChildren,
+  AdminForgotPasswordRoute: AdminForgotPasswordRoute,
   AdminLoginRoute: AdminLoginRoute,
+  AdminSecurityRoute: AdminSecurityRoute,
   CheckoutEventIdRoute: CheckoutEventIdRoute,
   CheckoutStatusRoute: CheckoutStatusRoute,
   DashboardFormRoute: DashboardFormRoute,

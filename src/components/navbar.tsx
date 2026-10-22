@@ -37,6 +37,9 @@ export function Navbar() {
               <ScanLine className="h-4 w-4" /> Scan
             </Link>
           )}
+          {user && (user.role === "organizer" || user.role === "admin") && (
+            <Link to="/admin/security" className="hover:text-primary">Account security</Link>
+          )}
           {user?.role === "admin" && (
             <Link to="/admin" className="flex items-center gap-1 hover:text-primary">
               <ShieldCheck className="h-4 w-4" /> Admin
@@ -86,6 +89,9 @@ export function Navbar() {
             )}
             {user && (user.role === "organizer" || user.role === "admin") && (
               <Link to="/scan" onClick={() => setOpen(false)} className="rounded-md px-2 py-2 hover:bg-accent">Scan Tickets</Link>
+            )}
+            {user && (user.role === "organizer" || user.role === "admin") && (
+              <Link to="/admin/security" onClick={() => setOpen(false)} className="rounded-md px-2 py-2 hover:bg-accent">Account security</Link>
             )}
             {user?.role === "admin" && (
               <Link to="/admin" onClick={() => setOpen(false)} className="rounded-md px-2 py-2 hover:bg-accent flex items-center gap-1"><ShieldCheck className="h-4 w-4" /> Admin</Link>
