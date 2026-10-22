@@ -752,12 +752,35 @@ export const approveAdminPayment = createServerFn({ method: "POST" })
         console.error("Error sending approval SMS:", e);
       }
 
-      try {
-        whatsappStatus = await sendTicketWhatsApp(request.orderId);
-      } catch (e) {
-        const message = e instanceof Error ? e.message : "WhatsApp delivery failed.";
+    }
+
+    // Payment approval can be retried after ticket minting if WhatsApp was
+    // previously unavailable. Retry only when no successful send is recorded.
+    if (tickets.length > 0) {
+      const { data: deliveryState, error: deliveryStateError } = await supabase
+        .from("orders")
+        .select("whatsapp_delivery_status, whatsapp_message_sid")
+        .eq("id", request.orderId)
+        .maybeSingle();
+
+      if (deliveryStateError) {
+        const message = "Could not check the existing WhatsApp delivery status.";
         whatsappStatus = { sent: false, message };
         await recordWhatsAppDeliveryFailure(request.orderId, message);
+      } else if (["sent", "delivered"].includes(deliveryState?.whatsapp_delivery_status || "")) {
+        whatsappStatus = {
+          sent: true,
+          message: "Ticket was already sent on WhatsApp.",
+          messageSid: deliveryState.whatsapp_message_sid || undefined,
+        };
+      } else {
+        try {
+          whatsappStatus = await sendTicketWhatsApp(request.orderId);
+        } catch (e) {
+          const message = e instanceof Error ? e.message : "WhatsApp delivery failed.";
+          whatsappStatus = { sent: false, message };
+          await recordWhatsAppDeliveryFailure(request.orderId, message);
+        }
       }
     }
 
