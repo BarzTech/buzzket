@@ -24,11 +24,6 @@ export function isSupabaseAdminConfigured() {
 let cached: { key: string; client: SupabaseClient<Database> } | null = null;
 
 export function getSupabaseAdmin(): SupabaseClient<Database> | null {
-  console.log("getSupabaseAdmin env check:", {
-    hasUrl: Boolean(process.env.SUPABASE_URL),
-    hasServiceKey: Boolean(process.env.SUPABASE_SERVICE_ROLE_KEY),
-    keys: Object.keys(process.env).filter(k => k.includes("SUPABASE") || k.includes("VITE")),
-  });
   const url = process.env.SUPABASE_URL;
   const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!url || !serviceRoleKey) return null;

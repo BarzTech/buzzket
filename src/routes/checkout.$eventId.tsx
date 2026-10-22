@@ -5,6 +5,7 @@ import { eventQueryOptions, type Event } from "@/lib/data/events";
 import { reserveTickets, submitManualMomoOrder, validatePromoCode } from "@/lib/data/tickets";
 import { getMobileMoneyConfig } from "@/lib/payments/manual-momo";
 import { normalizeWhatsAppNumber } from "@/lib/payments/phone";
+import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import type { MobileMoneyNetwork } from "@/lib/payments/types";
 import { publicPlatformSettingsQueryOptions } from "@/lib/data/platform";
 import { calcOrder, COMMISSION_FLAT_UGX, COMMISSION_PERCENT } from "@/lib/fees";
@@ -153,6 +154,14 @@ function Checkout() {
 
   const pay = async () => {
     if (!reservationId) return;
+    const supabase = getSupabaseBrowserClient();
+    const { data: sessionData } = supabase ? await supabase.auth.getSession() : { data: { session: null } };
+    const accessToken = sessionData.session?.access_token;
+    if (!accessToken) {
+      const redirect = `/checkout/${eventId}?tierId=${encodeURIComponent(search.tierId)}&qty=${encodeURIComponent(search.qty)}`;
+      navigate({ to: "/login", search: { redirect } });
+      return;
+    }
     if (!getMobileMoneyConfig(network, total).merchantCode) {
       setPayError(`${network === "mtn" ? "MTN" : "Airtel"} payments are not configured yet. Please contact Buzzket support before sending money.`);
       return;
@@ -185,6 +194,7 @@ function Checkout() {
       const statusToken = Array.from(crypto.getRandomValues(new Uint8Array(32)), (byte) => byte.toString(16).padStart(2, "0")).join("");
       const res = await submitManualMomoOrder({
         data: {
+          accessToken,
           reservationId,
           network,
           transactionId: transactionId.trim(),

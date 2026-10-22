@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 
 import { calcOrder } from "../src/lib/fees";
 import { tokenToSvg } from "../src/lib/qr";
+import { normalizeWhatsAppNumber } from "../src/lib/payments/phone";
 
 const order = calcOrder(100_000, 2);
 assert.equal(order.subtotal, 200_000);
@@ -12,4 +13,9 @@ const svg = await tokenToSvg("00000000-0000-4000-8000-000000000000");
 assert.match(svg, /<svg/);
 assert.match(svg, /<\/svg>/);
 
+assert.equal(normalizeWhatsAppNumber("+256 701 234 567"), "+256701234567");
+assert.throws(() => normalizeWhatsAppNumber("0701234567"), /international country code/i);
+
 console.log("smoke tests passed");
+// vite-node keeps its Vite module container alive after the assertions finish.
+process.exit(0);

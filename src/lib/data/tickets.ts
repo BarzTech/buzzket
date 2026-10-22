@@ -301,7 +301,6 @@ export async function sendTicketSms(tickets: IssuedTicket[]): Promise<{ sent: bo
     tickets.length,
     first.tier,
     first.orderId,
-    first.contactEmail,
   );
 
   const twilioRes = await sendTwilioSms({ to: phone, message: smsBody });
@@ -362,6 +361,7 @@ export const reserveTickets = createServerFn({ method: "POST" })
 export const submitManualMomoOrder = createServerFn({ method: "POST" })
   .validator(
     z.object({
+      accessToken: z.string().min(1),
       reservationId: z.string().min(1),
       network: z.enum(["mtn", "airtel"]),
       transactionId: z.string().trim().min(3, "Transaction reference / ID is required").max(120),
@@ -377,6 +377,12 @@ export const submitManualMomoOrder = createServerFn({ method: "POST" })
     const supabase = getSupabaseAdmin();
     if (!supabase) {
       throw new Error("Supabase server client is not configured.");
+    }
+
+    const { data: authData, error: authError } = await supabase.auth.getUser(data.accessToken);
+    const verifiedPhone = authData.user?.phone;
+    if (authError || !authData.user || !verifiedPhone || !authData.user.phone_confirmed_at) {
+      throw new Error("Verify your mobile number with SMS before submitting payment details.");
     }
 
     const trimmedTx = data.transactionId.trim();
@@ -396,10 +402,14 @@ export const submitManualMomoOrder = createServerFn({ method: "POST" })
     }
 
     const normalizedPhone = normalizeWhatsAppNumber(data.contactPhone);
+    if (normalizeWhatsAppNumber(verifiedPhone) !== normalizedPhone) {
+      throw new Error("Use the same verified phone number on your customer account and purchase.");
+    }
     const config = getMobileMoneyConfig(data.network);
     if (!config.merchantCode) throw new Error("This Mobile Money provider is not configured on the server.");
 
     const { data: rows, error } = await supabase.rpc("submit_manual_payment", {
+      p_customer_id: authData.user.id,
       p_reservation_id: data.reservationId,
       p_contact_name: data.contactName.trim(),
       p_contact_email: data.contactEmail.trim().toLowerCase(),

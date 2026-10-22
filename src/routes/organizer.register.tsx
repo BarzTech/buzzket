@@ -34,7 +34,9 @@ function OrganizerRegister() {
     setError(null);
     setSuccess(null);
     try {
-      const { error } = await auth.signUpWithEmail(email, password, "organizer");
+      // Public registration creates an ordinary account and a pending profile.
+      // Staff permissions are granted separately by an administrator.
+      const { error } = await auth.signUpWithEmail(email, password);
       if (error) {
         setError(error);
         return;

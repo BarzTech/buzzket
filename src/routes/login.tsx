@@ -1,6 +1,6 @@
 import { createFileRoute, useNavigate, Link } from "@tanstack/react-router";
 import { useState } from "react";
-import { Smartphone, Mail, Loader2 } from "lucide-react";
+import { Smartphone, Loader2 } from "lucide-react";
 
 import { Logo } from "@/components/logo";
 
@@ -9,7 +9,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card } from "@/components/ui/card";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { getStoredUser } from "@/lib/auth/session";
 
@@ -43,12 +42,6 @@ function Login() {
   const [otp, setOtp] = useState("");
   const [otpSent, setOtpSent] = useState(false);
 
-  // email state
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [mode, setMode] = useState<"signin" | "signup">("signin");
-  const [forgotMode, setForgotMode] = useState(false);
-  const [resetSent, setResetSent] = useState(false);
 
   const roleDestination = () => {
     const role = getStoredUser()?.role;
@@ -57,7 +50,6 @@ function Login() {
     return redirect === "/dashboard" || redirect === "/admin" ? "/browse" : redirect;
   };
   const done = () => navigate({ to: roleDestination() });
-  const doneAfterBuyerSignup = () => navigate({ to: redirect === "/dashboard" ? "/browse" : redirect });
 
   const run = async (fn: () => Promise<{ error: string | null }>, onSuccess = done) => {
     setBusy(true);
@@ -96,7 +88,7 @@ function Login() {
 
         <h1 className="text-center text-xl font-bold">Welcome back</h1>
         <p className="mt-1 text-center text-sm text-muted-foreground">
-          Sign in to buy tickets, manage events and scan attendees.
+          Verify your phone number to access your Buzzket customer account.
         </p>
 
         {!auth.supabaseEnabled && (
@@ -113,19 +105,13 @@ function Login() {
           </Alert>
         )}
 
-        <Tabs defaultValue="phone" className="mt-6">
-          <TabsList className="grid w-full grid-cols-2">
-            <TabsTrigger value="phone"><Smartphone className="mr-1.5 h-4 w-4" /> Phone</TabsTrigger>
-            <TabsTrigger value="email"><Mail className="mr-1.5 h-4 w-4" /> Email</TabsTrigger>
-          </TabsList>
-
-          {/* Phone OTP — default */}
-          <TabsContent value="phone" className="space-y-4 pt-4">
+        <div className="mt-6 space-y-4">
             <div>
               <Label htmlFor="phone">Phone number</Label>
               <Input
                 id="phone"
                 inputMode="tel"
+                autoComplete="tel"
                 placeholder="+256 7XX XXX XXX"
                 value={phone}
                 onChange={(e) => setPhone(e.target.value)}
@@ -135,86 +121,21 @@ function Login() {
             {otpSent && (
               <div>
                 <Label htmlFor="otp">Verification code</Label>
-                <Input
-                  id="otp"
-                  inputMode="numeric"
-                  placeholder="6-digit code"
-                  value={otp}
-                  onChange={(e) => setOtp(e.target.value)}
-                  disabled={busy}
-                />
+                <Input id="otp" inputMode="numeric" autoComplete="one-time-code" placeholder="Verification code" value={otp} onChange={(e) => setOtp(e.target.value)} disabled={busy} />
               </div>
             )}
             {!otpSent ? (
               <Button onClick={sendOtp} disabled={busy || !phone} className="w-full bg-cta text-cta-foreground hover:bg-cta/90 font-semibold">
-                {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : "Send code"}
+                {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <><Smartphone className="mr-2 h-4 w-4" /> Send code</>}
               </Button>
             ) : (
-              <Button
-                onClick={() => run(() => auth.verifyPhoneOtp(phone, otp))}
-                disabled={busy || (auth.supabaseEnabled && !otp)}
-                className="w-full bg-cta text-cta-foreground hover:bg-cta/90 font-semibold"
-              >
+              <Button onClick={() => run(() => auth.verifyPhoneOtp(phone, otp))} disabled={busy || !otp} className="w-full bg-cta text-cta-foreground hover:bg-cta/90 font-semibold">
                 {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : "Verify & continue"}
               </Button>
             )}
-          </TabsContent>
-
-          {/* Email / password */}
-          <TabsContent value="email" className="space-y-4 pt-4">
-            {forgotMode ? (
-              <>
-                <p className="text-sm text-muted-foreground">Enter your email address and we&apos;ll send a password reset link.</p>
-                <div>
-                  <Label htmlFor="reset-email">Email</Label>
-                  <Input id="reset-email" type="email" placeholder="you@example.com" value={email} onChange={(e) => { setEmail(e.target.value); setResetSent(false); }} disabled={busy} />
-                </div>
-                {resetSent && <Alert><AlertDescription>If an account exists for this email address, a password reset link has been sent.</AlertDescription></Alert>}
-                <Button onClick={() => run(() => auth.requestPasswordReset(email), async () => { setResetSent(true); })} disabled={busy || !email} className="w-full bg-cta text-cta-foreground hover:bg-cta/90 font-semibold">
-                  {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : "Send reset link"}
-                </Button>
-                <button type="button" onClick={() => { setForgotMode(false); setResetSent(false); }} className="w-full text-center text-xs text-muted-foreground hover:text-foreground">Back to sign in</button>
-              </>
-            ) : <>
-            <div>
-              <Label htmlFor="email">Email</Label>
-              <Input id="email" type="email" placeholder="you@example.com" value={email} onChange={(e) => setEmail(e.target.value)} disabled={busy} />
-            </div>
-            <div>
-              <Label htmlFor="password">Password</Label>
-              <Input id="password" type="password" placeholder="••••••••" value={password} onChange={(e) => setPassword(e.target.value)} disabled={busy} />
-            </div>
-            {mode === "signin" && <button type="button" onClick={() => { setForgotMode(true); setError(null); }} className="-mt-2 w-full text-right text-xs text-primary hover:underline">Forgot password?</button>}
-            <Button
-              onClick={() =>
-                mode === "signin"
-                  ? run(() => auth.signInWithEmail(email, password))
-                  : run(
-                      () => auth.signUpWithEmail(email, password, "buyer"),
-                      doneAfterBuyerSignup,
-                    )
-              }
-              disabled={busy || !email || !password}
-              className="w-full bg-cta text-cta-foreground hover:bg-cta/90 font-semibold"
-            >
-              {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : mode === "signin" ? "Sign in" : "Create account"}
-            </Button>
-            <button
-              type="button"
-              onClick={() => setMode((m) => (m === "signin" ? "signup" : "signin"))}
-              className="w-full text-center text-xs text-muted-foreground hover:text-foreground"
-            >
-              {mode === "signin" ? "New here? Create a buyer account" : "Already have an account? Sign in"}
-            </button>
-            <Link
-              to="/organizer/register"
-              className="block text-center text-xs font-medium text-primary hover:underline"
-            >
-              Register as an organiser
-            </Link>
-            </>}
-          </TabsContent>
-        </Tabs>
+            <Link to="/admin/login" search={{ redirect: "/admin" }} className="block text-center text-xs text-muted-foreground hover:underline">Staff sign in</Link>
+            <Link to="/organizer/register" className="block text-center text-xs font-medium text-primary hover:underline">Apply as an organiser</Link>
+        </div>
       </Card>
     </div>
   );

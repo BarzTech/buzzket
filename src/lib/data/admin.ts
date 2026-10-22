@@ -771,7 +771,7 @@ export const approveAdminPayment = createServerFn({ method: "POST" })
         whatsappStatus = {
           sent: true,
           message: "Ticket was already sent on WhatsApp.",
-          messageSid: deliveryState.whatsapp_message_sid || undefined,
+          messageSid: deliveryState?.whatsapp_message_sid || undefined,
         };
       } else {
         try {

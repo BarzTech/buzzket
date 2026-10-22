@@ -308,7 +308,7 @@ export type Database = {
         Returns: boolean;
       };
       submit_manual_payment: {
-        Args: { p_reservation_id: string; p_contact_name: string; p_contact_email: string; p_whatsapp_number: string; p_payment_method: string; p_transaction_id: string; p_merchant_code: string; p_status_token: string; p_promo_code?: string | null };
+        Args: { p_customer_id: string; p_reservation_id: string; p_contact_name: string; p_contact_email: string; p_whatsapp_number: string; p_payment_method: string; p_transaction_id: string; p_merchant_code: string; p_status_token: string; p_promo_code?: string | null };
         Returns: { order_id: string; status_token: string }[];
       };
       dashboard_stats: {

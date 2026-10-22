@@ -14,6 +14,9 @@ export default defineConfig({
     tanstackStart(),
     nitro({
       preset: process.env.VERCEL ? "vercel" : "node-server",
+      // Keep dependency tracing within this app tree. The default filesystem
+      // root makes nft walk inaccessible Windows profile ancestors in CI.
+      traceOpts: { nft: { base: process.cwd() } },
     }),
     tailwindcss(),
     react(),

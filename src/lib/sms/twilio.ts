@@ -44,9 +44,7 @@ export async function sendTwilioSms({
   const normalizedTo = normalizeUgandaPhone(to);
 
   if (!accountSid || !authToken || (!fromNumber && !messagingServiceSid)) {
-    console.info(
-      `[Twilio SMS Preview] (Credentials missing or partial) -> To: ${normalizedTo} | Body: "${message}"`,
-    );
+    console.warn("Twilio SMS is not configured; notification was not sent.");
     return {
       sent: false,
       error: "Twilio credentials not fully configured in environment.",
@@ -77,15 +75,14 @@ export async function sendTwilioSms({
     });
 
     if (!res.ok) {
-      const errorText = await res.text();
-      console.error(`[Twilio SMS Error] HTTP ${res.status}: ${errorText}`);
-      return { sent: false, error: `Twilio API error: ${res.status} - ${errorText}` };
+      console.error(`[Twilio SMS Error] HTTP ${res.status}`);
+      return { sent: false, error: `Twilio API error: ${res.status}` };
     }
 
     const json = (await res.json()) as { sid?: string };
     return { sent: true, messageId: json.sid };
   } catch (err) {
-    console.error("[Twilio SMS Exception]", err);
+    console.error("[Twilio SMS Exception]", err instanceof Error ? err.name : "Unknown error");
     return {
       sent: false,
       error: err instanceof Error ? err.message : "Unknown error sending SMS via Twilio",
@@ -98,10 +95,19 @@ export function buildApprovalSms(
   qty: number,
   tierName: string,
   orderId: string,
-  email: string,
 ): string {
   const shortId = orderId.slice(0, 8);
-  return `Buzzket: Your payment for ${eventTitle} has been approved! ${qty} ${tierName} ticket(s) confirmed. Ticket PDF sent to ${email}. Ref: ${shortId}`;
+  const configuredOrigin = process.env.APP_BASE_URL;
+  let signIn = "Sign in to your Buzzket account to access your tickets.";
+  if (configuredOrigin) {
+    try {
+      const origin = new URL(configuredOrigin);
+      if (origin.protocol === "https:") signIn = `Sign in at ${origin.origin}/login to access your tickets.`;
+    } catch {
+      // Never place an unvalidated environment value in an outbound message.
+    }
+  }
+  return `Buzzket: Payment approved for ${eventTitle}. ${qty} ${tierName} ticket(s) confirmed. ${signIn} Ref: ${shortId}`;
 }
 
 export function buildRejectionSms(

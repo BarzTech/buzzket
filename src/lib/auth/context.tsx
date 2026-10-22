@@ -10,6 +10,7 @@ import {
 import type { Session } from "@supabase/supabase-js";
 
 import { getSupabaseBrowserClient, isSupabaseConfigured } from "../supabase/client";
+import { normalizeWhatsAppNumber } from "../payments/phone";
 import { setSessionFlag, type SessionUser } from "./session";
 
 type AuthResult = { error: string | null };
@@ -24,11 +25,7 @@ type AuthContextValue = {
   // Email / password.
   signInWithEmail: (email: string, password: string) => Promise<AuthResult>;
   requestPasswordReset: (email: string) => Promise<AuthResult>;
-  signUpWithEmail: (
-    email: string,
-    password: string,
-    role?: SessionUser["role"],
-  ) => Promise<AuthResult>;
+  signUpWithEmail: (email: string, password: string) => Promise<AuthResult>;
   signOut: () => Promise<void>;
 };
 
@@ -43,7 +40,7 @@ function userFromSession(session: Session | null): SessionUser | null {
     label: sessionUser.phone || sessionUser.email || "Account",
     role: sessionUser.app_metadata?.role === "admin"
       ? "admin"
-      : sessionUser.app_metadata?.role === "organizer" || sessionUser.user_metadata?.role === "organizer"
+      : sessionUser.app_metadata?.role === "organizer"
         ? "organizer"
         : "buyer",
   };
@@ -83,7 +80,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     async (phone) => {
       const supabase = getSupabaseBrowserClient();
       if (!supabase) return { error: "Supabase is not configured. Add the launch environment variables first." };
-      const cleanPhone = phone.replace(/[^\d+]/g, "");
+      const cleanPhone = normalizeWhatsAppNumber(phone);
       const { error } = await supabase.auth.signInWithOtp({ phone: cleanPhone });
       return { error: error?.message ?? null };
     },
@@ -94,7 +91,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     async (phone, token) => {
       const supabase = getSupabaseBrowserClient();
       if (!supabase) return { error: "Supabase is not configured. Add the launch environment variables first." };
-      const cleanPhone = phone.replace(/[^\d+]/g, "");
+      const cleanPhone = normalizeWhatsAppNumber(phone);
       const { data, error } = await supabase.auth.verifyOtp({ phone: cleanPhone, token, type: "sms" });
       const next = userFromSession(data.session);
       setUser(next);
@@ -118,13 +115,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   );
 
   const signUpWithEmail = useCallback<AuthContextValue["signUpWithEmail"]>(
-    async (email, password, role = "buyer") => {
+    async (email, password) => {
       const supabase = getSupabaseBrowserClient();
       if (!supabase) return { error: "Supabase is not configured. Add the launch environment variables first." };
       const { data, error } = await supabase.auth.signUp({
         email: email.trim(),
         password,
-        options: { data: { role } },
       });
       const next = userFromSession(data.session);
       setUser(next);

@@ -13,25 +13,15 @@ export const getMyTickets = createServerFn({ method: "POST" })
 
     const { data: userData, error: userError } = await supabase.auth.getUser(data.accessToken);
     if (userError || !userData.user) throw new Error("Session is invalid.");
-
-    const email = userData.user.email ?? "";
-    const phone = userData.user.phone ?? "";
-    if (!email && !phone) return [];
-
-    let orderQuery = supabase
-      .from("orders")
-      .select("id")
-      .eq("status", "paid");
-
-    if (email && phone) {
-      orderQuery = orderQuery.or(`contact_email.eq.${email},contact_phone.eq.${phone}`);
-    } else if (email) {
-      orderQuery = orderQuery.eq("contact_email", email);
-    } else {
-      orderQuery = orderQuery.eq("contact_phone", phone);
+    if (!userData.user.phone || !userData.user.phone_confirmed_at) {
+      throw new Error("Sign in with your verified customer phone number to access tickets.");
     }
 
-    const { data: orders, error: ordersError } = await orderQuery;
+    const { data: orders, error: ordersError } = await supabase
+      .from("orders")
+      .select("id")
+      .eq("user_id", userData.user.id)
+      .in("status", ["paid", "payment_approved"]);
     if (ordersError) throw new Error(ordersError.message);
     const orderIds = (orders ?? []).map((order) => order.id);
     if (orderIds.length === 0) return [];
