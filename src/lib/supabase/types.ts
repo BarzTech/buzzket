@@ -158,6 +158,7 @@ export type Database = {
           contact_email: string | null;
           contact_phone: string | null;
           unit_price: number | null;
+          customer_id: string | null;
         };
         Insert: Partial<Database["public"]["Tables"]["reservations"]["Row"]>;
         Update: Partial<Database["public"]["Tables"]["reservations"]["Row"]>;

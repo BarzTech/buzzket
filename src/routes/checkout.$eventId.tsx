@@ -2,10 +2,12 @@ import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { formatUGX } from "@/lib/format";
 import { eventQueryOptions, type Event } from "@/lib/data/events";
-import { reserveTickets, submitManualMomoOrder, validatePromoCode } from "@/lib/data/tickets";
-import { getMobileMoneyConfig } from "@/lib/payments/manual-momo";
+import { getManualMomoPaymentInfo, reserveTickets, submitManualMomoOrder, validatePromoCode } from "@/lib/data/tickets";
 import { normalizeWhatsAppNumber } from "@/lib/payments/phone";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
+import { useAuth } from "@/lib/auth/context";
+import { hasVerifiedPhone } from "@/lib/auth/session";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import type { MobileMoneyNetwork } from "@/lib/payments/types";
 import { publicPlatformSettingsQueryOptions } from "@/lib/data/platform";
 import { calcOrder, COMMISSION_FLAT_UGX, COMMISSION_PERCENT } from "@/lib/fees";
@@ -17,7 +19,7 @@ import { Card } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Ticket } from "@/components/ticket";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   CheckCircle,
   Clock,
@@ -55,6 +57,19 @@ function Checkout() {
 
   const [step, setStep] = useState(1);
   const [contact, setContact] = useState({ name: "", email: "", phone: "" });
+  const auth = useAuth();
+  const [authOpen, setAuthOpen] = useState(false);
+  const [authPhone, setAuthPhone] = useState("");
+  const [authOtp, setAuthOtp] = useState("");
+  const [otpSent, setOtpSent] = useState(false);
+  const [authBusy, setAuthBusy] = useState(false);
+  const [authError, setAuthError] = useState<string | null>(null);
+  const [resendAfter, setResendAfter] = useState(0);
+  const [cooldownNow, setCooldownNow] = useState(Date.now());
+  const [paymentInfo, setPaymentInfo] = useState<{
+    network: MobileMoneyNetwork; name: string; merchantCode: string; merchantName: string;
+    ussdCode: string; instructions: string[]; amount: number;
+  } | null>(null);
 
   // Reservation state (10-minute hold created server-side via row-locking RPC).
   const [reservationId, setReservationId] = useState<string | null>(null);
@@ -75,6 +90,7 @@ function Checkout() {
 
   const [paying, setPaying] = useState(false);
   const [payError, setPayError] = useState<string | null>(null);
+  const statusTokenRef = useRef<string | null>(null);
   const qrTokens = null as string[] | null;
 
   const [promoInput, setPromoInput] = useState("");
@@ -92,6 +108,86 @@ function Checkout() {
   const discountedUnitPrice = Math.round(discountedUnitPriceRaw);
 
   const { subtotal, fees, total } = calcOrder(discountedUnitPrice, qty);
+
+  const unlockPayment = async (accessToken: string, selectedNetwork = network) => {
+    if (!reservationId) throw new Error("Your ticket reservation is not ready. Please try again.");
+    const info = await getManualMomoPaymentInfo({ data: {
+      accessToken, reservationId, network: selectedNetwork, promoCode: promo?.code,
+    } });
+    setNetwork(selectedNetwork);
+    setPaymentInfo(info);
+    setPayError(null);
+    setStep(3);
+    setAuthOpen(false);
+  };
+
+  useEffect(() => {
+    if (!otpSent || resendAfter <= Date.now()) return;
+    const timer = setInterval(() => setCooldownNow(Date.now()), 500);
+    return () => clearInterval(timer);
+  }, [otpSent, resendAfter]);
+
+  const changePaymentNetwork = async (selectedNetwork: MobileMoneyNetwork) => {
+    const supabase = getSupabaseBrowserClient();
+    const { data } = supabase ? await supabase.auth.getSession() : { data: { session: null } };
+    if (!data.session?.access_token || !hasVerifiedPhone(data.session.user)) {
+      setAuthOpen(true);
+      setAuthPhone(data.session?.user.phone || contact.phone);
+      return;
+    }
+    try { await unlockPayment(data.session.access_token, selectedNetwork); }
+    catch (e) { setPayError(e instanceof Error ? e.message : "Could not load payment information."); }
+  };
+
+  const continueToPayment = async () => {
+    if (!contact.name.trim()) return setPayError("Enter the ticket holder's name.");
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(contact.email.trim())) return setPayError("Enter a valid email address so we can send the tickets.");
+    try { normalizeWhatsAppNumber(contact.phone); } catch (e) {
+      return setPayError(e instanceof Error ? e.message : "Enter a valid WhatsApp number.");
+    }
+    setPayError(null);
+    const supabase = getSupabaseBrowserClient();
+    const { data } = supabase ? await supabase.auth.getSession() : { data: { session: null } };
+    const session = data.session;
+    if (!session?.access_token || !hasVerifiedPhone(session.user)) {
+      setAuthPhone(session?.user.phone || contact.phone);
+      setAuthOpen(true);
+      setAuthError(null);
+      return;
+    }
+    try {
+      await unlockPayment(session.access_token);
+    } catch (e) {
+      setPayError(e instanceof Error ? e.message : "Could not verify your session. Please try again.");
+    }
+  };
+
+  const sendCheckoutOtp = async () => {
+    setAuthBusy(true);
+    setAuthError(null);
+    try {
+      const result = await auth.signInWithPhone(authPhone);
+      if (result.error) setAuthError(result.error);
+      else { setOtpSent(true); setResendAfter(Date.now() + 30_000); }
+    } catch (e) {
+      setAuthError(e instanceof Error ? e.message : "Could not send the code. Check your connection and try again.");
+    } finally { setAuthBusy(false); }
+  };
+
+  const verifyCheckoutOtp = async () => {
+    setAuthBusy(true);
+    setAuthError(null);
+    try {
+      const result = await auth.verifyPhoneOtp(authPhone, authOtp.trim());
+      if (result.error) { setAuthError(result.error); return; }
+      const supabase = getSupabaseBrowserClient();
+      const { data } = supabase ? await supabase.auth.getSession() : { data: { session: null } };
+      if (!data.session?.access_token) throw new Error("Your verified session could not be loaded. Please sign in again.");
+      await unlockPayment(data.session.access_token);
+    } catch (e) {
+      setAuthError(e instanceof Error ? e.message : "Verification failed. Please try again.");
+    } finally { setAuthBusy(false); }
+  };
 
   const handleApplyPromo = async () => {
     if (!promoInput.trim()) return;
@@ -153,17 +249,13 @@ function Checkout() {
   const secs = String(remaining % 60).padStart(2, "0");
 
   const pay = async () => {
-    if (!reservationId) return;
+    if (!reservationId || !paymentInfo) return;
     const supabase = getSupabaseBrowserClient();
     const { data: sessionData } = supabase ? await supabase.auth.getSession() : { data: { session: null } };
     const accessToken = sessionData.session?.access_token;
     if (!accessToken) {
       const redirect = `/checkout/${eventId}?tierId=${encodeURIComponent(search.tierId)}&qty=${encodeURIComponent(search.qty)}`;
       navigate({ to: "/login", search: { redirect } });
-      return;
-    }
-    if (!getMobileMoneyConfig(network, total).merchantCode) {
-      setPayError(`${network === "mtn" ? "MTN" : "Airtel"} payments are not configured yet. Please contact Buzzket support before sending money.`);
       return;
     }
     if (!contact.name.trim()) {
@@ -191,7 +283,7 @@ function Checkout() {
     setPaying(true);
     setPayError(null);
     try {
-      const statusToken = Array.from(crypto.getRandomValues(new Uint8Array(32)), (byte) => byte.toString(16).padStart(2, "0")).join("");
+      statusTokenRef.current ??= Array.from(crypto.getRandomValues(new Uint8Array(32)), (byte) => byte.toString(16).padStart(2, "0")).join("");
       const res = await submitManualMomoOrder({
         data: {
           accessToken,
@@ -202,7 +294,7 @@ function Checkout() {
           contactEmail: contact.email.trim(),
           contactPhone: normalizedPhone,
           promoCode: promo?.code,
-          statusToken,
+          statusToken: statusTokenRef.current,
         },
       });
 
@@ -392,11 +484,7 @@ function Checkout() {
                   <Button variant="outline" onClick={() => setStep(1)} className="flex-1">Back</Button>
                   <Button
                     onClick={() => {
-                      if (!contact.name.trim()) return setPayError("Enter the ticket holder's name.");
-                      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(contact.email.trim())) return setPayError("Enter a valid email address so we can send the tickets.");
-                      try { normalizeWhatsAppNumber(contact.phone); } catch (e) { return setPayError(e instanceof Error ? e.message : "Enter a valid WhatsApp number."); }
-                      setPayError(null);
-                      setStep(3);
+                      void continueToPayment();
                     }}
                     className="flex-1 bg-cta text-cta-foreground hover:bg-cta/90 font-semibold"
                   >
@@ -407,7 +495,9 @@ function Checkout() {
             )}
 
             {step === 3 && (() => {
-              const momoConfig = getMobileMoneyConfig(network, total);
+              const momoConfig = paymentInfo;
+              if (!momoConfig || momoConfig.network !== network) return <div className="space-y-4"><p role="alert" className="text-sm text-destructive">Verify your phone number before viewing payment information.</p><Button onClick={() => setAuthOpen(true)}>Sign in with SMS</Button></div>;
+              const paymentTotal = momoConfig.amount;
               return (
                 <div className="space-y-5">
                   <div>
@@ -422,7 +512,7 @@ function Checkout() {
                     <button
                       type="button"
                       onClick={() => {
-                        setNetwork("mtn");
+                        void changePaymentNetwork("mtn");
                         setPayError(null);
                       }}
                       className={`flex items-center justify-center gap-2 rounded-xl border p-3 transition-all text-sm font-semibold cursor-pointer ${
@@ -438,7 +528,7 @@ function Checkout() {
                     <button
                       type="button"
                       onClick={() => {
-                        setNetwork("airtel");
+                        void changePaymentNetwork("airtel");
                         setPayError(null);
                       }}
                       className={`flex items-center justify-center gap-2 rounded-xl border p-3 transition-all text-sm font-semibold cursor-pointer ${
@@ -478,10 +568,10 @@ function Checkout() {
                       <div className="text-right">
                         <div className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">Exact Amount</div>
                         <div className="text-xl font-extrabold text-primary flex items-center justify-end gap-1.5 mt-0.5">
-                          <span>{formatUGX(total)}</span>
+                          <span>{formatUGX(paymentTotal)}</span>
                           <button
                             type="button"
-                            onClick={() => copyToClipboard(String(total), "amount")}
+                            onClick={() => copyToClipboard(String(paymentTotal), "amount")}
                             className="text-xs text-muted-foreground hover:text-foreground inline-flex items-center gap-1 border rounded px-1.5 py-0.5 bg-muted/30"
                           >
                             {copiedText === "amount" ? <Check className="h-3 w-3 text-emerald-500" /> : <Copy className="h-3 w-3" />}
@@ -536,7 +626,7 @@ function Checkout() {
                   )}
 
                   <div className="flex gap-3 pt-2">
-                    <Button variant="outline" onClick={() => setStep(2)} className="flex-1">Back</Button>
+                  <Button variant="outline" onClick={() => { setPaymentInfo(null); setStep(2); }} className="flex-1">Back</Button>
                     <Button
                       onClick={pay}
                       disabled={paying || expired || !reservationId || !momoConfig.merchantCode}
@@ -576,14 +666,14 @@ function Checkout() {
                   placeholder="Promo code" 
                   value={promoInput} 
                   onChange={(e) => setPromoInput(e.target.value)} 
-                  disabled={!!promo || applyingPromo}
+                  disabled={step === 3 || !!promo || applyingPromo}
                   className="h-9 text-sm"
                 />
                 <Button 
                   variant="outline" 
                   size="sm" 
                   onClick={promo ? () => setPromo(null) : handleApplyPromo}
-                  disabled={applyingPromo || (!promoInput.trim() && !promo)}
+                  disabled={step === 3 || applyingPromo || (!promoInput.trim() && !promo)}
                 >
                   {promo ? "Remove" : applyingPromo ? <Loader2 className="h-4 w-4 animate-spin" /> : "Apply"}
                 </Button>
@@ -607,12 +697,44 @@ function Checkout() {
                 <span>{formatUGX(fees)}</span>
               </div>
               <Separator />
-              <div className="flex justify-between text-base font-bold"><span>Total</span><span>{formatUGX(total)}</span></div>
+              <div className="flex justify-between text-base font-bold"><span>Total</span><span>{formatUGX(paymentInfo?.amount ?? total)}</span></div>
               <div className="pt-2 text-[11px] text-muted-foreground">Pay directly to the displayed MTN or Airtel merchant code. Tickets are issued after manual verification.</div>
             </div>
           </Card>
         </div>
       </div>
+      <Dialog open={authOpen} onOpenChange={setAuthOpen}>
+        <DialogContent className="w-[calc(100%-2rem)] max-w-md">
+          <DialogHeader>
+            <DialogTitle>Sign in to continue to payment</DialogTitle>
+            <DialogDescription>
+              Verify your phone number to continue securely. After verification, you can view the payment instructions for your tickets.
+            </DialogDescription>
+          </DialogHeader>
+          {authError && <Alert variant="destructive"><AlertDescription>{authError}</AlertDescription></Alert>}
+          <div className="space-y-4">
+            <div>
+              <Label htmlFor="checkout-auth-phone">Account phone number</Label>
+              <Input id="checkout-auth-phone" type="tel" inputMode="tel" autoComplete="tel" placeholder="+256 7XX XXX XXX" value={authPhone} onChange={(e) => setAuthPhone(e.target.value)} disabled={otpSent || authBusy} />
+              <p className="mt-1 text-xs text-muted-foreground">Use your own number in international format. It can differ from the WhatsApp delivery number in checkout.</p>
+            </div>
+            {otpSent && <div>
+              <Label htmlFor="checkout-auth-otp">SMS verification code</Label>
+              <Input id="checkout-auth-otp" inputMode="numeric" autoComplete="one-time-code" value={authOtp} onChange={(e) => setAuthOtp(e.target.value)} disabled={authBusy} />
+            </div>}
+            {!otpSent ? <Button onClick={() => void sendCheckoutOtp()} disabled={authBusy || !authPhone.trim()} className="w-full">
+              {authBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : "Send SMS code"}
+            </Button> : <div className="space-y-2">
+              <Button onClick={() => void verifyCheckoutOtp()} disabled={authBusy || !authOtp.trim()} className="w-full">
+                {authBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : "Verify and continue"}
+              </Button>
+              <Button variant="outline" onClick={() => void sendCheckoutOtp()} disabled={authBusy || cooldownNow < resendAfter} className="w-full">
+                {cooldownNow < resendAfter ? `Resend available in ${Math.ceil((resendAfter - cooldownNow) / 1000)}s` : "Resend code"}
+              </Button>
+            </div>}
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

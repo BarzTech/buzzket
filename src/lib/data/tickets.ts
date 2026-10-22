@@ -10,8 +10,8 @@ import {
 } from "./platform";
 import { generateTicketPdfBytes, sanitizeTicketFilename } from "../ticket-pdf";
 import { sendTwilioSms, buildApprovalSms } from "../sms/twilio";
-import { getMobileMoneyConfig } from "../payments/manual-momo";
 import { normalizeWhatsAppNumber } from "../payments/phone";
+import { hasVerifiedPhone } from "../auth/session";
 
 export type IssuedTicket = {
   id: string;
@@ -356,6 +356,89 @@ export const reserveTickets = createServerFn({ method: "POST" })
     return { reservationId: row.reservation_id, expiresAt: row.expires_at };
   });
 
+// Return merchant instructions only after the server has verified a live,
+// phone-confirmed Supabase session and an active reservation.
+export const getManualMomoPaymentInfo = createServerFn({ method: "POST" })
+  .validator(z.object({
+    accessToken: z.string().min(1),
+    reservationId: z.string().uuid(),
+    network: z.enum(["mtn", "airtel"]),
+    promoCode: z.string().max(80).optional(),
+  }))
+  .handler(async ({ data }) => {
+    const supabase = getSupabaseAdmin();
+    if (!supabase) throw new Error("Supabase server client is not configured.");
+    const { data: authData, error: authError } = await supabase.auth.getUser(data.accessToken);
+    if (authError || !hasVerifiedPhone(authData.user)) {
+      throw new Error("Verify your phone number with SMS before viewing payment instructions.");
+    }
+    const { data: reservation, error: reservationError } = await supabase
+      .from("reservations")
+      .select("id,tier_id,quantity,status,expires_at,customer_id")
+      .eq("id", data.reservationId)
+      .maybeSingle();
+    if (reservationError || !reservation || reservation.status !== "active" || Date.parse(reservation.expires_at) <= Date.now()) {
+      throw new Error("Your ticket reservation expired or is no longer available. Return to the event and start checkout again.");
+    }
+    if (reservation.customer_id && reservation.customer_id !== authData.user.id) {
+      throw new Error("This checkout is associated with another customer account.");
+    }
+    if (!reservation.customer_id) {
+      const { data: claimed, error: claimError } = await supabase
+        .from("reservations")
+        .update({ customer_id: authData.user.id })
+        .eq("id", reservation.id)
+        .is("customer_id", null)
+        .eq("status", "active")
+        .gt("expires_at", new Date().toISOString())
+        .select("id")
+        .maybeSingle();
+      if (claimError) throw new Error("Could not associate this checkout with your account. Please retry.");
+      if (!claimed) {
+        const { data: current, error: currentError } = await supabase
+          .from("reservations")
+          .select("customer_id,status,expires_at")
+          .eq("id", reservation.id)
+          .maybeSingle();
+        if (currentError || current?.customer_id !== authData.user.id || current.status !== "active" || Date.parse(current.expires_at) <= Date.now()) {
+          throw new Error("This checkout is no longer available for your account. Please restart checkout.");
+        }
+      }
+    }
+    const { data: tier, error: tierError } = await supabase
+      .from("ticket_tiers")
+      .select("event_id,price")
+      .eq("id", reservation.tier_id)
+      .maybeSingle();
+    if (tierError || !tier) throw new Error("This ticket type is no longer available.");
+
+    let unitPrice = tier.price;
+    if (data.promoCode?.trim()) {
+      const { data: promo, error: promoError } = await supabase
+        .from("promo_codes")
+        .select("type,value,active,expires_at,max_uses,used_count")
+        .eq("event_id", tier.event_id)
+        .ilike("code", data.promoCode.trim())
+        .maybeSingle();
+      if (promoError || !promo || !promo.active ||
+        (promo.expires_at && promo.expires_at < new Date().toISOString().slice(0, 10)) ||
+        (promo.max_uses !== null && promo.used_count >= promo.max_uses)) {
+        throw new Error("That promo code is no longer valid. Recheck your total before paying.");
+      }
+      unitPrice = promo.type === "percent"
+        ? Math.max(0, Math.round(unitPrice * (1 - promo.value / 100)))
+        : Math.max(0, unitPrice - promo.value);
+    }
+    const amount = Math.ceil((unitPrice + 500) / 0.95) * reservation.quantity;
+    const merchant = data.network === "mtn"
+      ? { code: "04454491", name: "DARREN BAZIRA", ussd: "*165*3#", networkName: "MTN Mobile Money" }
+      : { code: "6993013", name: "BUZZKET", ussd: "*185*9#", networkName: "Airtel Money" };
+    const instructions = data.network === "mtn"
+      ? [`Dial ${merchant.ussd} on your phone`, `Enter Merchant Code: ${merchant.code} (${merchant.name})`, "Enter Payment Reference: Your Name or Order Ref", `Enter the exact amount: UGX ${amount.toLocaleString("en-UG")}`, "Enter your MTN MoMo PIN to authorize the transaction", "Copy the Transaction ID from the MTN SMS receipt and enter it below"]
+      : [`Dial ${merchant.ussd} on your phone`, `Enter Merchant / Pay Code: ${merchant.code} (${merchant.name})`, `Enter the exact amount: UGX ${amount.toLocaleString("en-UG")}`, "Enter Payment Reference: Your Name or Order Ref", "Enter your Airtel Money PIN to authorize the transaction", "Copy the Transaction ID from the Airtel SMS receipt and enter it below"];
+    return { network: data.network, name: merchant.networkName, merchantCode: merchant.code, merchantName: merchant.name, ussdCode: merchant.ussd, instructions, amount };
+  });
+
 // --- Manual Mobile Money (MTN & Airtel) ---------------------------------------
 
 export const submitManualMomoOrder = createServerFn({ method: "POST" })
@@ -381,8 +464,23 @@ export const submitManualMomoOrder = createServerFn({ method: "POST" })
 
     const { data: authData, error: authError } = await supabase.auth.getUser(data.accessToken);
     const verifiedPhone = authData.user?.phone;
-    if (authError || !authData.user || !verifiedPhone || !authData.user.phone_confirmed_at) {
+    if (authError || !hasVerifiedPhone(authData.user) || !verifiedPhone) {
       throw new Error("Verify your mobile number with SMS before submitting payment details.");
+    }
+
+    const { data: ownedReservation, error: ownershipError } = await supabase
+      .from("reservations")
+      .select("customer_id,status,expires_at,order_id")
+      .eq("id", data.reservationId)
+      .maybeSingle();
+    const isActiveOwnedReservation = ownedReservation?.status === "active" && Date.parse(ownedReservation.expires_at) > Date.now();
+    let isPreviouslySubmittedByCustomer = false;
+    if (ownedReservation?.status === "confirmed" && ownedReservation.order_id) {
+      const { data: priorOrder } = await supabase.from("orders").select("user_id").eq("id", ownedReservation.order_id).maybeSingle();
+      isPreviouslySubmittedByCustomer = priorOrder?.user_id === authData.user.id;
+    }
+    if (ownershipError || ownedReservation?.customer_id !== authData.user.id || (!isActiveOwnedReservation && !isPreviouslySubmittedByCustomer)) {
+      throw new Error("This checkout is not active for your account. Please restart checkout.");
     }
 
     const trimmedTx = data.transactionId.trim();
@@ -402,11 +500,7 @@ export const submitManualMomoOrder = createServerFn({ method: "POST" })
     }
 
     const normalizedPhone = normalizeWhatsAppNumber(data.contactPhone);
-    if (normalizeWhatsAppNumber(verifiedPhone) !== normalizedPhone) {
-      throw new Error("Use the same verified phone number on your customer account and purchase.");
-    }
-    const config = getMobileMoneyConfig(data.network);
-    if (!config.merchantCode) throw new Error("This Mobile Money provider is not configured on the server.");
+    const merchantCode = data.network === "mtn" ? "04454491" : "6993013";
 
     const { data: rows, error } = await supabase.rpc("submit_manual_payment", {
       p_customer_id: authData.user.id,
@@ -416,7 +510,7 @@ export const submitManualMomoOrder = createServerFn({ method: "POST" })
       p_whatsapp_number: normalizedPhone,
       p_payment_method: data.network === "mtn" ? "MTN Mobile Money" : "Airtel Money",
       p_transaction_id: trimmedTx,
-      p_merchant_code: config.merchantCode,
+      p_merchant_code: merchantCode,
       p_status_token: data.statusToken,
       p_promo_code: data.promoCode?.trim() || null,
     });

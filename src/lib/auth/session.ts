@@ -11,6 +11,11 @@ export type SessionUser = {
   role: "buyer" | "organizer" | "admin";
 };
 
+/** True only for a real Supabase user with a confirmed phone claim. */
+export function hasVerifiedPhone(user: { phone?: string | null; phone_confirmed_at?: string | null } | null | undefined): boolean {
+  return Boolean(user?.phone && user.phone_confirmed_at);
+}
+
 export function setSessionFlag(user: SessionUser | null) {
   if (typeof window === "undefined") return;
   if (user) {
