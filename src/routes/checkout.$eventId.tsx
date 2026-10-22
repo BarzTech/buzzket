@@ -4,10 +4,10 @@ import { formatUGX } from "@/lib/format";
 import { eventQueryOptions, type Event } from "@/lib/data/events";
 import { getManualMomoPaymentInfo, reserveTickets, submitManualMomoOrder, validatePromoCode } from "@/lib/data/tickets";
 import { normalizeWhatsAppNumber } from "@/lib/payments/phone";
+import { canShowPaymentInstructions, CHECKOUT_STEPS } from "@/lib/payments/checkout-flow";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import { useAuth } from "@/lib/auth/context";
 import { hasVerifiedPhone } from "@/lib/auth/session";
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import type { MobileMoneyNetwork } from "@/lib/payments/types";
 import { publicPlatformSettingsQueryOptions } from "@/lib/data/platform";
 import { calcOrder, COMMISSION_FLAT_UGX, COMMISSION_PERCENT } from "@/lib/fees";
@@ -58,7 +58,6 @@ function Checkout() {
   const [step, setStep] = useState(1);
   const [contact, setContact] = useState({ name: "", email: "", phone: "" });
   const auth = useAuth();
-  const [authOpen, setAuthOpen] = useState(false);
   const [authPhone, setAuthPhone] = useState("");
   const [authOtp, setAuthOtp] = useState("");
   const [otpSent, setOtpSent] = useState(false);
@@ -117,8 +116,7 @@ function Checkout() {
     setNetwork(selectedNetwork);
     setPaymentInfo(info);
     setPayError(null);
-    setStep(3);
-    setAuthOpen(false);
+    setStep(4);
   };
 
   useEffect(() => {
@@ -131,34 +129,34 @@ function Checkout() {
     const supabase = getSupabaseBrowserClient();
     const { data } = supabase ? await supabase.auth.getSession() : { data: { session: null } };
     if (!data.session?.access_token || !hasVerifiedPhone(data.session.user)) {
-      setAuthOpen(true);
       setAuthPhone(data.session?.user.phone || contact.phone);
+      setStep(3);
       return;
     }
     try { await unlockPayment(data.session.access_token, selectedNetwork); }
     catch (e) { setPayError(e instanceof Error ? e.message : "Could not load payment information."); }
   };
 
-  const continueToPayment = async () => {
+  const continueToSignIn = async () => {
     if (!contact.name.trim()) return setPayError("Enter the ticket holder's name.");
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(contact.email.trim())) return setPayError("Enter a valid email address so we can send the tickets.");
     try { normalizeWhatsAppNumber(contact.phone); } catch (e) {
       return setPayError(e instanceof Error ? e.message : "Enter a valid WhatsApp number.");
     }
     setPayError(null);
+    setAuthError(null);
+    setStep(3);
     const supabase = getSupabaseBrowserClient();
     const { data } = supabase ? await supabase.auth.getSession() : { data: { session: null } };
     const session = data.session;
     if (!session?.access_token || !hasVerifiedPhone(session.user)) {
       setAuthPhone(session?.user.phone || contact.phone);
-      setAuthOpen(true);
-      setAuthError(null);
       return;
     }
     try {
       await unlockPayment(session.access_token);
     } catch (e) {
-      setPayError(e instanceof Error ? e.message : "Could not verify your session. Please try again.");
+      setAuthError(e instanceof Error ? e.message : "Could not verify your session. Please try again.");
     }
   };
 
@@ -254,8 +252,8 @@ function Checkout() {
     const { data: sessionData } = supabase ? await supabase.auth.getSession() : { data: { session: null } };
     const accessToken = sessionData.session?.access_token;
     if (!accessToken) {
-      const redirect = `/checkout/${eventId}?tierId=${encodeURIComponent(search.tierId)}&qty=${encodeURIComponent(search.qty)}`;
-      navigate({ to: "/login", search: { redirect } });
+      setAuthError("Your session expired. Sign in again to continue.");
+      setStep(3);
       return;
     }
     if (!contact.name.trim()) {
@@ -378,7 +376,7 @@ function Checkout() {
     );
   }
 
-  const steps = ["Select Tickets", "Contact Info", "Payment"];
+  const steps = CHECKOUT_STEPS;
 
   return (
     <div className="min-h-screen">
@@ -483,25 +481,57 @@ function Checkout() {
                 <div className="flex gap-3">
                   <Button variant="outline" onClick={() => setStep(1)} className="flex-1">Back</Button>
                   <Button
-                    onClick={() => {
-                      void continueToPayment();
-                    }}
+                    onClick={() => { void continueToSignIn(); }}
                     className="flex-1 bg-cta text-cta-foreground hover:bg-cta/90 font-semibold"
                   >
-                    Continue
+                    Continue to Sign In
                   </Button>
                 </div>
               </div>
             )}
 
-            {step === 3 && (() => {
+            {step === 3 && (
+              <div className="space-y-5">
+                <div>
+                  <h2 className="text-lg font-semibold">3. Sign In via SMS</h2>
+                  <p className="mt-1 text-sm text-muted-foreground">Verify your phone number to continue securely. After verification, you can view the payment instructions for your tickets.</p>
+                </div>
+                {authError && <Alert variant="destructive"><AlertDescription>{authError}</AlertDescription></Alert>}
+                {!otpSent ? <div className="space-y-4">
+                  <div>
+                    <Label htmlFor="checkout-auth-phone">Account phone number</Label>
+                    <Input id="checkout-auth-phone" type="tel" inputMode="tel" autoComplete="tel" placeholder="+256 7XX XXX XXX" value={authPhone} onChange={(e) => setAuthPhone(e.target.value)} disabled={authBusy} />
+                    <p className="mt-1 text-xs text-muted-foreground">Use your own number in international format. It can differ from the WhatsApp delivery number in checkout.</p>
+                  </div>
+                  <Button onClick={() => void sendCheckoutOtp()} disabled={authBusy || !authPhone.trim()} className="w-full">
+                    {authBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : "Send SMS code"}
+                  </Button>
+                </div> : <div className="space-y-4">
+                  <div>
+                    <Label htmlFor="checkout-auth-phone">Code sent to {authPhone}</Label>
+                    <Input id="checkout-auth-otp" aria-label="SMS verification code" inputMode="numeric" autoComplete="one-time-code" value={authOtp} onChange={(e) => setAuthOtp(e.target.value)} disabled={authBusy} />
+                  </div>
+                  <Button onClick={() => void verifyCheckoutOtp()} disabled={authBusy || !authOtp.trim()} className="w-full">
+                    {authBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : "Verify and continue"}
+                  </Button>
+                  <Button variant="outline" onClick={() => void sendCheckoutOtp()} disabled={authBusy || cooldownNow < resendAfter} className="w-full">
+                    {cooldownNow < resendAfter ? `Resend available in ${Math.ceil((resendAfter - cooldownNow) / 1000)}s` : "Resend code"}
+                  </Button>
+                </div>}
+                <div className="flex gap-3">
+                  <Button variant="outline" onClick={() => { setAuthError(null); setStep(2); }} className="flex-1">Back</Button>
+                </div>
+              </div>
+            )}
+
+            {step === 4 && (() => {
               const momoConfig = paymentInfo;
-              if (!momoConfig || momoConfig.network !== network) return <div className="space-y-4"><p role="alert" className="text-sm text-destructive">Verify your phone number before viewing payment information.</p><Button onClick={() => setAuthOpen(true)}>Sign in with SMS</Button></div>;
+              if (!momoConfig || !canShowPaymentInstructions(step, momoConfig) || momoConfig.network !== network) return <div className="space-y-4"><p role="alert" className="text-sm text-destructive">Verify your phone number before viewing payment information.</p><Button onClick={() => setStep(3)}>Continue to Sign In</Button></div>;
               const paymentTotal = momoConfig.amount;
               return (
                 <div className="space-y-5">
                   <div>
-                    <h2 className="text-lg font-bold">3. Mobile Money Payment</h2>
+                      <h2 className="text-lg font-bold">4. Mobile Money Payment</h2>
                     <p className="text-xs text-muted-foreground mt-0.5">
                       Pay using your phone via MTN or Airtel Merchant Code, then enter the Transaction ID below.
                     </p>
@@ -626,7 +656,7 @@ function Checkout() {
                   )}
 
                   <div className="flex gap-3 pt-2">
-                  <Button variant="outline" onClick={() => { setPaymentInfo(null); setStep(2); }} className="flex-1">Back</Button>
+                  <Button variant="outline" onClick={() => { setPaymentInfo(null); setStep(3); }} className="flex-1">Back</Button>
                     <Button
                       onClick={pay}
                       disabled={paying || expired || !reservationId || !momoConfig.merchantCode}
@@ -666,14 +696,14 @@ function Checkout() {
                   placeholder="Promo code" 
                   value={promoInput} 
                   onChange={(e) => setPromoInput(e.target.value)} 
-                  disabled={step === 3 || !!promo || applyingPromo}
+                  disabled={step === 4 || !!promo || applyingPromo}
                   className="h-9 text-sm"
                 />
                 <Button 
                   variant="outline" 
                   size="sm" 
                   onClick={promo ? () => setPromo(null) : handleApplyPromo}
-                  disabled={step === 3 || applyingPromo || (!promoInput.trim() && !promo)}
+                  disabled={step === 4 || applyingPromo || (!promoInput.trim() && !promo)}
                 >
                   {promo ? "Remove" : applyingPromo ? <Loader2 className="h-4 w-4 animate-spin" /> : "Apply"}
                 </Button>
@@ -698,43 +728,11 @@ function Checkout() {
               </div>
               <Separator />
               <div className="flex justify-between text-base font-bold"><span>Total</span><span>{formatUGX(paymentInfo?.amount ?? total)}</span></div>
-              <div className="pt-2 text-[11px] text-muted-foreground">Pay directly to the displayed MTN or Airtel merchant code. Tickets are issued after manual verification.</div>
+              {step === 4 && <div className="pt-2 text-[11px] text-muted-foreground">Pay directly to the displayed MTN or Airtel merchant code. Tickets are issued after manual verification.</div>}
             </div>
           </Card>
         </div>
       </div>
-      <Dialog open={authOpen} onOpenChange={setAuthOpen}>
-        <DialogContent className="w-[calc(100%-2rem)] max-w-md">
-          <DialogHeader>
-            <DialogTitle>Sign in to continue to payment</DialogTitle>
-            <DialogDescription>
-              Verify your phone number to continue securely. After verification, you can view the payment instructions for your tickets.
-            </DialogDescription>
-          </DialogHeader>
-          {authError && <Alert variant="destructive"><AlertDescription>{authError}</AlertDescription></Alert>}
-          <div className="space-y-4">
-            <div>
-              <Label htmlFor="checkout-auth-phone">Account phone number</Label>
-              <Input id="checkout-auth-phone" type="tel" inputMode="tel" autoComplete="tel" placeholder="+256 7XX XXX XXX" value={authPhone} onChange={(e) => setAuthPhone(e.target.value)} disabled={otpSent || authBusy} />
-              <p className="mt-1 text-xs text-muted-foreground">Use your own number in international format. It can differ from the WhatsApp delivery number in checkout.</p>
-            </div>
-            {otpSent && <div>
-              <Label htmlFor="checkout-auth-otp">SMS verification code</Label>
-              <Input id="checkout-auth-otp" inputMode="numeric" autoComplete="one-time-code" value={authOtp} onChange={(e) => setAuthOtp(e.target.value)} disabled={authBusy} />
-            </div>}
-            {!otpSent ? <Button onClick={() => void sendCheckoutOtp()} disabled={authBusy || !authPhone.trim()} className="w-full">
-              {authBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : "Send SMS code"}
-            </Button> : <div className="space-y-2">
-              <Button onClick={() => void verifyCheckoutOtp()} disabled={authBusy || !authOtp.trim()} className="w-full">
-                {authBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : "Verify and continue"}
-              </Button>
-              <Button variant="outline" onClick={() => void sendCheckoutOtp()} disabled={authBusy || cooldownNow < resendAfter} className="w-full">
-                {cooldownNow < resendAfter ? `Resend available in ${Math.ceil((resendAfter - cooldownNow) / 1000)}s` : "Resend code"}
-              </Button>
-            </div>}
-          </div>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }

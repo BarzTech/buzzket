@@ -4,6 +4,7 @@ import { calcOrder } from "../src/lib/fees";
 import { tokenToSvg } from "../src/lib/qr";
 import { normalizeWhatsAppNumber } from "../src/lib/payments/phone";
 import { hasVerifiedPhone } from "../src/lib/auth/session";
+import { canShowPaymentInstructions, CHECKOUT_STEPS } from "../src/lib/payments/checkout-flow";
 
 const order = calcOrder(100_000, 2);
 assert.equal(order.subtotal, 200_000);
@@ -20,6 +21,10 @@ assert.equal(hasVerifiedPhone({ phone: "+256701234567", phone_confirmed_at: "202
 assert.equal(hasVerifiedPhone({ phone: "+256701234567", phone_confirmed_at: null }), false);
 assert.equal(hasVerifiedPhone({ phone: null, phone_confirmed_at: "2026-10-22T10:00:00Z" }), false);
 assert.equal(hasVerifiedPhone(null), false);
+assert.deepEqual(CHECKOUT_STEPS, ["Select Tickets", "Contact Information", "Sign In", "Payment"]);
+assert.equal(canShowPaymentInstructions(3, { merchantCode: "example" }), false);
+assert.equal(canShowPaymentInstructions(4, null), false);
+assert.equal(canShowPaymentInstructions(4, { merchantCode: "example" }), true);
 
 console.log("smoke tests passed");
 // vite-node keeps its Vite module container alive after the assertions finish.
