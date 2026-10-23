@@ -248,7 +248,7 @@ export const getAdminOrganizers = createServerFn({ method: "POST" })
   // Get all orders.
   const { data: orders, error: ordersError } = await supabase
     .from("orders")
-    .select("id, event_id, status, total, fees, subtotal");
+    .select("id, event_id, status, total, fees, subtotal, fee_responsibility");
   if (ordersError) throw new Error(ordersError.message);
 
   // Group events by organizer.
@@ -329,7 +329,7 @@ export const getAdminOrganizers = createServerFn({ method: "POST" })
     if (org) {
       org.totalGross += order.total;
       org.totalFees += order.fees;
-      org.totalNet += order.subtotal;
+        org.totalNet += order.subtotal - (order.fee_responsibility === "organizer" ? order.fees : 0);
     }
   }
 
@@ -376,6 +376,7 @@ export const getAdminOrders = createServerFn({ method: "POST" })
       total,
       fees,
       subtotal,
+      fee_responsibility,
       created_at,
       events (
         title,
@@ -417,7 +418,7 @@ export const getAdminOrders = createServerFn({ method: "POST" })
       unitPrice,
       totalGross: row.total,
       platformFee: row.fees,
-      organizerNet: row.subtotal,
+      organizerNet: row.subtotal - (row.fee_responsibility === "organizer" ? row.fees : 0),
       paymentMethod: row.payment_method,
       status: (row.status === "paid" ? "confirmed" : "cancelled") as "confirmed" | "refunded" | "cancelled",
       purchasedAt: row.created_at,
@@ -538,6 +539,7 @@ export const getAdminPaymentVerifications = createServerFn({ method: "POST" })
         email_error,
         sms_sent_at,
         sms_error,
+        sms_delivery_status,
         ticket_generation_status,
         ticket_generation_error,
         whatsapp_delivery_status,
@@ -679,6 +681,7 @@ export const getAdminPaymentVerifications = createServerFn({ method: "POST" })
         emailError: ord.email_error || null,
         smsSentAt: ord.sms_sent_at || null,
         smsError: ord.sms_error || null,
+        smsDeliveryStatus: ord.sms_delivery_status || "pending",
         ticketGenerationStatus: ord.ticket_generation_status || "pending",
         ticketGenerationError: ord.ticket_generation_error || null,
         whatsappDeliveryStatus: ord.whatsapp_delivery_status || "pending",
@@ -720,7 +723,7 @@ export const approveAdminPayment = createServerFn({ method: "POST" })
     // Fetch newly minted tickets
     const tickets = await getIssuedTicketsForOrder(request.orderId);
     let emailStatus: { sent: boolean; message: string } = { sent: false, message: "" };
-    let smsStatus: { sent: boolean; message: string } = { sent: false, message: "" };
+    let smsStatus: { sent: boolean; message: string; deliveryStatus: string } = { sent: false, message: "", deliveryStatus: "pending" };
 
     let whatsappStatus: { sent: boolean; message: string; messageSid?: string } = { sent: false, message: "" };
     if (tickets.length > 0 && !row.already_approved) {
@@ -746,6 +749,7 @@ export const approveAdminPayment = createServerFn({ method: "POST" })
           .update({
             sms_sent_at: smsStatus.sent ? new Date().toISOString() : null,
             sms_error: smsStatus.sent ? null : smsStatus.message,
+            sms_delivery_status: smsStatus.deliveryStatus as "accepted" | "queued" | "sent" | "delivered" | "failed",
           })
           .eq("id", request.orderId);
       } catch (e) {
@@ -881,6 +885,23 @@ export const resendAdminTicketNotifications = createServerFn({ method: "POST" })
       throw new Error("No issued tickets found for this order. It may not be approved yet.");
     }
 
+    const { data: priorSms, error: priorSmsError } = await supabase
+      .from("orders")
+      .select("sms_sent_at,sms_delivery_status")
+      .eq("id", request.orderId)
+      .maybeSingle();
+    if (priorSmsError) throw new Error("Could not check the current SMS delivery state.");
+    let sms: { sent: boolean; message: string; deliveryStatus: string } = { sent: true, message: "SMS was already accepted by the provider.", deliveryStatus: priorSms?.sms_delivery_status || "accepted" };
+    if (!priorSms?.sms_sent_at) {
+      sms = await sendTicketSms(tickets);
+      const { error: smsUpdateError } = await supabase.from("orders").update({
+        sms_sent_at: sms.sent ? new Date().toISOString() : null,
+        sms_error: sms.sent ? null : sms.message,
+        sms_delivery_status: sms.deliveryStatus as "accepted" | "queued" | "sent" | "delivered" | "failed",
+      }).eq("id", request.orderId);
+      if (smsUpdateError) throw new Error("SMS was attempted but its delivery state could not be saved.");
+    }
+
     let whatsapp: { sent: boolean; message: string; messageSid?: string };
     try {
       whatsapp = await sendTicketWhatsApp(request.orderId);
@@ -905,9 +926,10 @@ export const resendAdminTicketNotifications = createServerFn({ method: "POST" })
       action: "resend_ticket",
       metadata: {
         whatsappResult: whatsapp,
+        smsResult: sms,
       },
     });
 
-    return { success: true, whatsapp };
+    return { success: true, whatsapp, sms };
   });
 

@@ -64,6 +64,7 @@ export interface ManualVerificationItem {
   emailError: string | null;
   smsSentAt: string | null;
   smsError: string | null;
+  smsDeliveryStatus: "pending" | "accepted" | "queued" | "sent" | "delivered" | "failed";
   ticketGenerationStatus: string;
   ticketGenerationError: string | null;
   whatsappDeliveryStatus: "pending" | "sent" | "delivered" | "failed";

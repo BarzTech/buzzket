@@ -1,6 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { queryOptions } from "@tanstack/react-query";
 import { z } from "zod";
+import { normalizeWhatsAppNumber } from "@/lib/payments/phone";
 
 import { getSupabaseAdmin } from "../supabase/server";
 
@@ -10,6 +11,8 @@ export type OrganizerProfile = {
   bio: string;
   avatarUrl: string;
   phone: string;
+  recoveryPhone: string;
+  recoveryPhoneVerified: boolean;
   website: string;
   payoutMethod: string;
   payoutAccount: string;
@@ -97,6 +100,8 @@ export const getMyOrganizerProfile = createServerFn({ method: "POST" })
       bio: profile?.bio || "",
       avatarUrl: profile?.avatar_url || "",
       phone: profile?.phone || user.phone || "",
+      recoveryPhone: profile?.recovery_phone || "",
+      recoveryPhoneVerified: Boolean(profile?.recovery_phone_verified_at),
       website: profile?.website || "",
       payoutMethod: profile?.payout_method || "MTN Mobile Money",
       payoutAccount: profile?.payout_account || "",
@@ -106,21 +111,36 @@ export const getMyOrganizerProfile = createServerFn({ method: "POST" })
   });
 
 export const bootstrapOrganizerProfile = createServerFn({ method: "POST" })
-  .validator(accessTokenSchema.extend({ displayName: z.string().min(2) }))
+  .validator(accessTokenSchema.extend({ displayName: z.string().min(2), recoveryPhone: z.string().min(8).max(20) }))
   .handler(async ({ data }) => {
     const { supabase, user } = await requireUser(data.accessToken);
+    let recoveryPhone: string;
+    try { recoveryPhone = normalizeWhatsAppNumber(data.recoveryPhone); }
+    catch { throw new Error("Enter a valid recovery phone number in international format."); }
+    if (user.phone !== recoveryPhone || !user.phone_confirmed_at) {
+      throw new Error("Verify this recovery phone by SMS before completing organiser registration.");
+    }
     const { data: existing, error: existingError } = await supabase
       .from("organizer_profiles")
       .select("user_id")
       .eq("user_id", user.id)
       .maybeSingle();
     if (existingError) throw new Error(existingError.message);
-    if (existing) return { ok: true, created: false };
+    if (existing) {
+      const { error: updateError } = await supabase.from("organizer_profiles").update({
+        recovery_phone: recoveryPhone,
+        recovery_phone_verified_at: new Date().toISOString(),
+      }).eq("user_id", user.id);
+      if (updateError) throw new Error(updateError.message);
+      return { ok: true, created: false };
+    }
 
     const { error } = await supabase.from("organizer_profiles").insert({
       user_id: user.id,
       display_name: data.displayName.trim(),
       approval_status: "pending",
+      recovery_phone: recoveryPhone,
+      recovery_phone_verified_at: new Date().toISOString(),
     });
     if (error) throw new Error(error.message);
     return { ok: true, created: true };
@@ -179,7 +199,7 @@ export const getOrganizerFinance = createServerFn({ method: "POST" })
 
     const { data: orders, error: ordersError } = await supabase
       .from("orders")
-      .select("total, fees, subtotal")
+      .select("total, fees, subtotal, fee_responsibility")
       .eq("status", "paid")
       .in("event_id", eventIds);
     if (ordersError) throw new Error(ordersError.message);
@@ -193,7 +213,7 @@ export const getOrganizerFinance = createServerFn({ method: "POST" })
 
     const gross = (orders ?? []).reduce((sum, order) => sum + order.total, 0);
     const fees = (orders ?? []).reduce((sum, order) => sum + order.fees, 0);
-    const net = (orders ?? []).reduce((sum, order) => sum + order.subtotal, 0);
+    const net = (orders ?? []).reduce((sum, order) => sum + order.subtotal - (order.fee_responsibility === "organizer" ? order.fees : 0), 0);
     const requested = (payouts ?? []).reduce((sum, payout) => sum + payout.amount, 0);
     return { gross, fees, net, requested, available: Math.max(0, net - requested) };
   });

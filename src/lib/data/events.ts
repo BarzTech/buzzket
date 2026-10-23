@@ -18,6 +18,7 @@ export const eventSchema = z.object({
   image: z.string(),
   priceFrom: z.number().nonnegative(),
   organizerId: z.string().optional().nullable(),
+  feeResponsibility: z.enum(["customer", "organizer"]).default("customer"),
   organizer: z.object({ name: z.string(), avatar: z.string() }),
   description: z.string(),
   featured: z.boolean(),
@@ -54,6 +55,7 @@ export type Event = z.infer<typeof eventSchema>;
 export type EventCard = z.infer<typeof eventCardSchema>;
 
 export const upsertEventSchema = z.object({
+  accessToken: z.string().min(1),
   id: z.string().optional(),
   organizerId: z.string().optional(),
   title: z.string(),
@@ -64,6 +66,7 @@ export const upsertEventSchema = z.object({
   image: z.string().url(),
   description: z.string(),
   featured: z.boolean(),
+  feeResponsibility: z.enum(["customer", "organizer"]).default("customer"),
   tiers: z
     .array(
       z.object({
@@ -154,7 +157,7 @@ export const eventQueryOptions = (eventId: string) =>
         .select(
           `
           id, title, category, date, venue, city, image, description, featured,
-          price_from, organizer_name, organizer_avatar, organizer_id
+          price_from, organizer_name, organizer_avatar, organizer_id, fee_responsibility
         `,
         )
         .eq("id", eventId)
@@ -185,6 +188,7 @@ export const eventQueryOptions = (eventId: string) =>
         ...data,
         priceFrom: data.price_from,
         organizerId: data.organizer_id,
+        feeResponsibility: data.fee_responsibility ?? "customer",
         organizer: { name: data.organizer_name, avatar: data.organizer_avatar },
         tiers: (tiers ?? []).map((tier) => ({
           id: tier.id,

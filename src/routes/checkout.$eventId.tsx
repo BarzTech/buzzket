@@ -67,7 +67,8 @@ function Checkout() {
   const [cooldownNow, setCooldownNow] = useState(Date.now());
   const [paymentInfo, setPaymentInfo] = useState<{
     network: MobileMoneyNetwork; name: string; merchantCode: string; merchantName: string;
-    ussdCode: string; instructions: string[]; amount: number;
+    ussdCode: string; instructions: string[]; amount: number; subtotal: number; fees: number;
+    feeResponsibility: "customer" | "organizer";
   } | null>(null);
 
   // Reservation state (10-minute hold created server-side via row-locking RPC).
@@ -106,7 +107,10 @@ function Checkout() {
   // Ticket prices are whole UGX values and the database stores integer prices.
   const discountedUnitPrice = Math.round(discountedUnitPriceRaw);
 
-  const { subtotal, fees, total } = calcOrder(discountedUnitPrice, qty);
+  const calculatedOrder = calcOrder(discountedUnitPrice, qty, event?.feeResponsibility ?? "customer");
+  const subtotal = paymentInfo?.subtotal ?? calculatedOrder.subtotal;
+  const fees = paymentInfo?.fees ?? calculatedOrder.fees;
+  const total = paymentInfo?.amount ?? calculatedOrder.total;
 
   const unlockPayment = async (accessToken: string, selectedNetwork = network) => {
     if (!reservationId) throw new Error("Your ticket reservation is not ready. Please try again.");
@@ -721,9 +725,9 @@ function Checkout() {
                   <span>-{formatUGX((unitPrice - discountedUnitPrice) * qty)}</span>
                 </div>
               )}
-              <div className="flex justify-between"><span className="text-muted-foreground">Subtotal</span><span>{formatUGX(subtotal)}</span></div>
+              <div className="flex justify-between"><span className="text-muted-foreground">Ticket price</span><span>{formatUGX(subtotal)}</span></div>
               <div className="flex justify-between">
-                <span className="text-muted-foreground">Service &amp; Processing Fee <span className="opacity-70">({Math.round(COMMISSION_PERCENT * 100)}% + {formatUGX(COMMISSION_FLAT_UGX)}/ticket)</span></span>
+                <span className="text-muted-foreground">Platform fee {paymentInfo?.feeResponsibility === "organizer" || (!paymentInfo && event?.feeResponsibility === "organizer") ? "(deducted from organiser proceeds)" : ""} <span className="opacity-70">({Math.round(COMMISSION_PERCENT * 100)}% + {formatUGX(COMMISSION_FLAT_UGX)}/ticket)</span></span>
                 <span>{formatUGX(fees)}</span>
               </div>
               <Separator />

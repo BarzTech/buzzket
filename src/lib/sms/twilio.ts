@@ -35,7 +35,7 @@ export async function sendTwilioSms({
 }: {
   to: string;
   message: string;
-}): Promise<{ sent: boolean; messageId?: string; error?: string }> {
+}): Promise<{ sent: boolean; messageId?: string; providerStatus?: string; error?: string }> {
   const accountSid = process.env.TWILIO_ACCOUNT_SID;
   const authToken = process.env.TWILIO_AUTH_TOKEN;
   const fromNumber = process.env.TWILIO_PHONE_NUMBER;
@@ -79,8 +79,8 @@ export async function sendTwilioSms({
       return { sent: false, error: `Twilio API error: ${res.status}` };
     }
 
-    const json = (await res.json()) as { sid?: string };
-    return { sent: true, messageId: json.sid };
+    const json = (await res.json()) as { sid?: string; status?: string };
+    return { sent: true, messageId: json.sid, providerStatus: json.status || "accepted" };
   } catch (err) {
     console.error("[Twilio SMS Exception]", err instanceof Error ? err.name : "Unknown error");
     return {

@@ -24,6 +24,7 @@ export type Database = {
           description: string;
           featured: boolean;
           organizer_id: string | null;
+          fee_responsibility: "customer" | "organizer";
           created_at: string;
         };
         Insert: Partial<Database["public"]["Tables"]["events"]["Row"]> & {
@@ -80,6 +81,7 @@ export type Database = {
           subtotal: number;
           fees: number;
           total: number;
+          fee_responsibility: "customer" | "organizer";
           created_at: string;
           paid_at: string | null;
           transaction_id: string | null;
@@ -92,6 +94,7 @@ export type Database = {
           email_error: string | null;
           sms_sent_at: string | null;
           sms_error: string | null;
+          sms_delivery_status: "pending" | "accepted" | "queued" | "sent" | "delivered" | "failed";
           whatsapp_number: string | null;
           guest_status_token_hash: string | null;
           pdf_storage_path: string | null;
@@ -159,6 +162,7 @@ export type Database = {
           contact_phone: string | null;
           unit_price: number | null;
           customer_id: string | null;
+          fee_responsibility: "customer" | "organizer";
         };
         Insert: Partial<Database["public"]["Tables"]["reservations"]["Row"]>;
         Update: Partial<Database["public"]["Tables"]["reservations"]["Row"]>;
@@ -194,6 +198,8 @@ export type Database = {
           bio: string;
           avatar_url: string;
           phone: string;
+          recovery_phone: string | null;
+          recovery_phone_verified_at: string | null;
           website: string;
           payout_method: string;
           payout_account: string;

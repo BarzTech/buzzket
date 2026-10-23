@@ -460,7 +460,7 @@ function Dashboard() {
                 <form onSubmit={submitProfile} className="space-y-5">
                   <div className="flex flex-wrap items-center gap-4">
                     {profileForm.avatarUrl ? (
-                      <img src={profileForm.avatarUrl} alt="Organizer profile" className="h-20 w-20 rounded-full object-cover ring-1 ring-border" />
+                      <img src={profileForm.avatarUrl} alt="Organizer profile" className="h-20 w-20 rounded-full object-cover ring-1 ring-border" onError={(e) => { e.currentTarget.style.visibility = "hidden"; }} />
                     ) : (
                       <div aria-label="No profile picture uploaded" className="flex h-20 w-20 items-center justify-center rounded-full bg-muted text-muted-foreground ring-1 ring-border">
                         <UserRound className="h-10 w-10" aria-hidden="true" />

@@ -3,6 +3,7 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { assertOrganizerApproved } from "@/lib/data/organizers.server";
 
 export async function upsertEventServer(eventData: {
+  accessToken: string;
   id?: string;
   organizerId?: string;
   title: string;
@@ -13,6 +14,7 @@ export async function upsertEventServer(eventData: {
   image: string;
   description: string;
   featured: boolean;
+  feeResponsibility: "customer" | "organizer";
   tiers: Array<{
     id?: string;
     name: string;
@@ -23,7 +25,24 @@ export async function upsertEventServer(eventData: {
   const supabase = getSupabaseAdmin();
   if (!supabase) throw new Error("Supabase client not available");
 
-  const { tiers, id, organizerId, ...eventFields } = eventData;
+  const { data: authData, error: authError } = await supabase.auth.getUser(eventData.accessToken);
+  if (authError || !authData.user) throw new Error("Sign in again before saving this event.");
+  const actorId = authData.user.id;
+  const { data: roles, error: rolesError } = await supabase.from("user_roles").select("role").eq("user_id", actorId);
+  if (rolesError) throw new Error("Could not verify event permissions.");
+  const isAdmin = (roles ?? []).some((role) => role.role === "admin");
+  const isOrganizer = (roles ?? []).some((role) => role.role === "organizer");
+  if (!isAdmin && !isOrganizer) throw new Error("An approved organiser account is required to manage events.");
+  if (eventData.id) {
+    const { data: existing, error: existingError } = await supabase.from("events").select("organizer_id").eq("id", eventData.id).maybeSingle();
+    if (existingError) throw new Error("Could not verify event ownership.");
+    if (!existing || (!isAdmin && existing.organizer_id !== actorId)) throw new Error("You are not authorized to edit this event.");
+  }
+
+  const { tiers, id, accessToken, organizerId: requestedOrganizerId, ...eventFields } = eventData;
+  void accessToken;
+  const organizerId = isAdmin ? (requestedOrganizerId ?? actorId) : actorId;
+  if (!isAdmin) eventFields.featured = false;
   await assertOrganizerApproved(supabase, organizerId);
   const eventId = id ?? randomUUID();
   const priceFrom = Math.min(...tiers.map((tier) => tier.price));
@@ -41,6 +60,7 @@ export async function upsertEventServer(eventData: {
       image: eventFields.image,
       description: eventFields.description,
       featured: eventFields.featured,
+      fee_responsibility: eventFields.feeResponsibility,
       price_from: priceFrom,
       organizer_id: organizerId || null,
       organizer_name: "Buzzket Organiser",

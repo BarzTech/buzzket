@@ -32,6 +32,7 @@ const eventFormSchema = z.object({
   image: z.string().url("Please enter a valid image URL"),
   description: z.string().min(10, "Description must be at least 10 characters"),
   featured: z.boolean(),
+  feeResponsibility: z.enum(["customer", "organizer"]),
   tiers: z
     .array(
       z.object({
@@ -91,6 +92,7 @@ function EventForm() {
       image: "",
       description: "",
       featured: false,
+      feeResponsibility: "customer",
       tiers: [{ name: "Regular", price: 0, quantity_total: 100 }],
     },
     values: event
@@ -104,6 +106,7 @@ function EventForm() {
           image: event.image,
           description: event.description,
           featured: event.featured,
+          feeResponsibility: event.feeResponsibility,
           tiers: event.tiers,
         }
       : undefined,
@@ -172,6 +175,7 @@ function EventForm() {
       const user = getStoredUser();
       const payload = {
         ...values,
+        accessToken,
         organizerId: (values.id ? event?.organizerId : user?.id) ?? undefined,
       };
       await upsertEvent({ data: payload });
@@ -338,6 +342,25 @@ function EventForm() {
                     <FormControl>
                       <Textarea placeholder="Tell us more about your event..." className="min-h-32" {...field} />
                     </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={form.control}
+                name="feeResponsibility"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Who pays the Buzzket platform fee?</FormLabel>
+                    <Select onValueChange={field.onChange} value={field.value}>
+                      <FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl>
+                      <SelectContent>
+                        <SelectItem value="customer">Customer pays the fee on top of the ticket price</SelectItem>
+                        <SelectItem value="organizer">I absorb the fee from my proceeds</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <p className="text-xs text-muted-foreground">Changing this affects new orders only. Existing orders keep their saved totals.</p>
                     <FormMessage />
                   </FormItem>
                 )}

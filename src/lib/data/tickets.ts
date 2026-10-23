@@ -289,10 +289,10 @@ export async function sendRejectionEmail({
   return { sent: true, message: "Rejection email sent." };
 }
 
-export async function sendTicketSms(tickets: IssuedTicket[]): Promise<{ sent: boolean; message: string }> {
+export async function sendTicketSms(tickets: IssuedTicket[]): Promise<{ sent: boolean; message: string; deliveryStatus: string }> {
   const phone = tickets[0]?.contactPhone;
   if (!phone || phone.replace(/\D/g, "").length < 9) {
-    return { sent: false, message: "No valid customer phone number was provided." };
+    return { sent: false, message: "No valid customer phone number was provided.", deliveryStatus: "failed" };
   }
 
   const first = tickets[0];
@@ -305,7 +305,7 @@ export async function sendTicketSms(tickets: IssuedTicket[]): Promise<{ sent: bo
 
   const twilioRes = await sendTwilioSms({ to: phone, message: smsBody });
   if (twilioRes.sent) {
-    return { sent: true, message: "Twilio SMS notification sent." };
+    return { sent: true, message: "Twilio accepted the SMS request.", deliveryStatus: twilioRes.providerStatus || "accepted" };
   }
 
   // Fallback to legacy SMS webhook if configured
@@ -317,7 +317,7 @@ export async function sendTicketSms(tickets: IssuedTicket[]): Promise<{ sent: bo
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ to: phone, message: smsBody }),
       });
-      if (res.ok) return { sent: true, message: "SMS notification sent via webhook." };
+      if (res.ok) return { sent: true, message: "SMS webhook accepted the notification.", deliveryStatus: "accepted" };
     } catch {
       // Ignore webhook fallback error
     }
@@ -326,6 +326,7 @@ export async function sendTicketSms(tickets: IssuedTicket[]): Promise<{ sent: bo
   return {
     sent: false,
     message: twilioRes.error || "SMS delivery could not be completed.",
+    deliveryStatus: "failed",
   };
 }
 
@@ -374,7 +375,7 @@ export const getManualMomoPaymentInfo = createServerFn({ method: "POST" })
     }
     const { data: reservation, error: reservationError } = await supabase
       .from("reservations")
-      .select("id,tier_id,quantity,status,expires_at,customer_id")
+      .select("id,tier_id,quantity,status,expires_at,customer_id,fee_responsibility")
       .eq("id", data.reservationId)
       .maybeSingle();
     if (reservationError || !reservation || reservation.status !== "active" || Date.parse(reservation.expires_at) <= Date.now()) {
@@ -411,7 +412,6 @@ export const getManualMomoPaymentInfo = createServerFn({ method: "POST" })
       .eq("id", reservation.tier_id)
       .maybeSingle();
     if (tierError || !tier) throw new Error("This ticket type is no longer available.");
-
     let unitPrice = tier.price;
     if (data.promoCode?.trim()) {
       const { data: promo, error: promoError } = await supabase
@@ -429,14 +429,16 @@ export const getManualMomoPaymentInfo = createServerFn({ method: "POST" })
         ? Math.max(0, Math.round(unitPrice * (1 - promo.value / 100)))
         : Math.max(0, unitPrice - promo.value);
     }
-    const amount = Math.ceil((unitPrice + 500) / 0.95) * reservation.quantity;
+    const subtotal = unitPrice * reservation.quantity;
+    const platformFee = (Math.ceil((unitPrice + 500) / 0.95) - unitPrice) * reservation.quantity;
+    const amount = reservation.fee_responsibility === "organizer" ? subtotal : subtotal + platformFee;
     const merchant = data.network === "mtn"
       ? { code: "04454491", name: "DARREN BAZIRA", ussd: "*165*3#", networkName: "MTN Mobile Money" }
       : { code: "6993013", name: "BUZZKET", ussd: "*185*9#", networkName: "Airtel Money" };
     const instructions = data.network === "mtn"
       ? [`Dial ${merchant.ussd} on your phone`, `Enter Merchant Code: ${merchant.code} (${merchant.name})`, "Enter Payment Reference: Your Name or Order Ref", `Enter the exact amount: UGX ${amount.toLocaleString("en-UG")}`, "Enter your MTN MoMo PIN to authorize the transaction", "Copy the Transaction ID from the MTN SMS receipt and enter it below"]
       : [`Dial ${merchant.ussd} on your phone`, `Enter Merchant / Pay Code: ${merchant.code} (${merchant.name})`, `Enter the exact amount: UGX ${amount.toLocaleString("en-UG")}`, "Enter Payment Reference: Your Name or Order Ref", "Enter your Airtel Money PIN to authorize the transaction", "Copy the Transaction ID from the Airtel SMS receipt and enter it below"];
-    return { network: data.network, name: merchant.networkName, merchantCode: merchant.code, merchantName: merchant.name, ussdCode: merchant.ussd, instructions, amount };
+    return { network: data.network, name: merchant.networkName, merchantCode: merchant.code, merchantName: merchant.name, ussdCode: merchant.ussd, instructions, amount, subtotal, fees: platformFee, feeResponsibility: reservation.fee_responsibility };
   });
 
 // --- Manual Mobile Money (MTN & Airtel) ---------------------------------------

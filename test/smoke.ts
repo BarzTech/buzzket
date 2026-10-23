@@ -11,6 +11,11 @@ const order = calcOrder(100_000, 2);
 assert.equal(order.subtotal, 200_000);
 assert.ok(order.fees > 0);
 assert.equal(order.total, order.subtotal + order.fees);
+const absorbedOrder = calcOrder(100_000, 2, "organizer");
+assert.equal(absorbedOrder.subtotal, 200_000);
+assert.equal(absorbedOrder.total, absorbedOrder.subtotal);
+assert.ok(absorbedOrder.fees > 0);
+assert.equal(calcOrder(100_000, 2, "customer").total, absorbedOrder.subtotal + absorbedOrder.fees);
 
 const svg = await tokenToSvg("00000000-0000-4000-8000-000000000000");
 assert.match(svg, /<svg/);

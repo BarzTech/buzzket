@@ -25,7 +25,7 @@ type AuthContextValue = {
   // Email / password.
   signInWithEmail: (email: string, password: string) => Promise<AuthResult>;
   requestPasswordReset: (email: string) => Promise<AuthResult>;
-  signUpWithEmail: (email: string, password: string) => Promise<AuthResult>;
+  signUpWithEmail: (email: string, password: string, metadata?: Record<string, string>) => Promise<AuthResult>;
   signOut: () => Promise<void>;
 };
 
@@ -115,12 +115,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   );
 
   const signUpWithEmail = useCallback<AuthContextValue["signUpWithEmail"]>(
-    async (email, password) => {
+    async (email, password, metadata) => {
       const supabase = getSupabaseBrowserClient();
       if (!supabase) return { error: "Supabase is not configured. Add the launch environment variables first." };
       const { data, error } = await supabase.auth.signUp({
         email: email.trim(),
         password,
+        options: { data: metadata },
       });
       const next = userFromSession(data.session);
       setUser(next);

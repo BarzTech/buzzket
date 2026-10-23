@@ -21,9 +21,12 @@ export function feePerTicket(desiredUnitPrice: number) {
   return grossUpPerTicket(desiredUnitPrice) - desiredUnitPrice;
 }
 
-export function calcOrder(unitPrice: number, qty: number) {
+export type FeeResponsibility = "customer" | "organizer";
+
+export function calcOrder(unitPrice: number, qty: number, feeResponsibility: FeeResponsibility = "customer") {
   const subtotal = unitPrice * qty;
-  const total = grossUpPerTicket(unitPrice) * qty;
-  const fees = total - subtotal;
+  const feePerUnit = grossUpPerTicket(unitPrice) - unitPrice;
+  const fees = feePerUnit * qty;
+  const total = feeResponsibility === "customer" ? subtotal + fees : subtotal;
   return { subtotal, fees, total };
 }
